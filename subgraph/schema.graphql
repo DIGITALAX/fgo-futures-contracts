@@ -1,4 +1,4 @@
-type FuturesContractOpened @entity(immutable: true) {
+type FuturesContractOpened @entity {
   id: Bytes!
   contractId: BigInt! # uint256
   childId: BigInt! # uint256
@@ -12,7 +12,7 @@ type FuturesContractOpened @entity(immutable: true) {
   blockTimestamp: BigInt!
   transactionHash: Bytes!
 }
-type ChildClaimedAfterSettlement @entity(immutable: true) {
+type ChildClaimedAfterSettlement @entity {
   id: Bytes!
   contractId: BigInt! # uint256
   claimer: Bytes! # address
@@ -23,7 +23,7 @@ type ChildClaimedAfterSettlement @entity(immutable: true) {
   transactionHash: Bytes!
 }
 
-type RightsDeposited @entity(immutable: true) {
+type RightsDeposited @entity {
   id: Bytes!
   rightsKey: Bytes! # bytes32
   depositor: Bytes! # address
@@ -37,7 +37,7 @@ type RightsDeposited @entity(immutable: true) {
   transactionHash: Bytes!
 }
 
-type RightsWithdrawn @entity(immutable: true) {
+type RightsWithdrawn @entity {
   id: Bytes!
   rightsKey: Bytes! # bytes32
   withdrawer: Bytes! # address
@@ -46,7 +46,7 @@ type RightsWithdrawn @entity(immutable: true) {
   blockTimestamp: BigInt!
   transactionHash: Bytes!
 }
-type FGOFuturesEscrowChildClaimedAfterSettlement @entity(immutable: true) {
+type FGOFuturesEscrowChildClaimedAfterSettlement @entity {
   id: Bytes!
   contractId: BigInt! # uint256
   claimer: Bytes! # address
@@ -57,7 +57,7 @@ type FGOFuturesEscrowChildClaimedAfterSettlement @entity(immutable: true) {
   transactionHash: Bytes!
 }
 
-type FGOFuturesEscrowRightsDeposited @entity(immutable: true) {
+type FGOFuturesEscrowRightsDeposited @entity {
   id: Bytes!
   rightsKey: Bytes! # bytes32
   depositor: Bytes! # address
@@ -71,7 +71,7 @@ type FGOFuturesEscrowRightsDeposited @entity(immutable: true) {
   transactionHash: Bytes!
 }
 
-type FGOFuturesEscrowRightsWithdrawn @entity(immutable: true) {
+type FGOFuturesEscrowRightsWithdrawn @entity {
   id: Bytes!
   rightsKey: Bytes! # bytes32
   withdrawer: Bytes! # address
@@ -80,7 +80,7 @@ type FGOFuturesEscrowRightsWithdrawn @entity(immutable: true) {
   blockTimestamp: BigInt!
   transactionHash: Bytes!
 }
-type ContractSettled @entity(immutable: true) {
+type ContractSettled @entity {
   id: Bytes!
   contractId: BigInt! # uint256
   reward: BigInt! # uint256
@@ -91,7 +91,7 @@ type ContractSettled @entity(immutable: true) {
   transactionHash: Bytes!
 }
 
-type MEVBotRegistered @entity(immutable: true) {
+type MEVBotRegistered @entity {
   id: Bytes!
   stakeAmount: BigInt! # uint256
   bot: Bytes! # address
@@ -100,7 +100,7 @@ type MEVBotRegistered @entity(immutable: true) {
   transactionHash: Bytes!
 }
 
-type MEVBotSlashed @entity(immutable: true) {
+type MEVBotSlashed @entity {
   id: Bytes!
   slashAmount: BigInt! # uint256
   bot: Bytes! # address
@@ -109,7 +109,7 @@ type MEVBotSlashed @entity(immutable: true) {
   transactionHash: Bytes!
 }
 
-type StakeWithdrawn @entity(immutable: true) {
+type StakeWithdrawn @entity {
   id: Bytes!
   amount: BigInt! # uint256
   bot: Bytes! # address

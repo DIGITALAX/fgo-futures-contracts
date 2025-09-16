@@ -76,7 +76,7 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
         if (amount == 0) revert FGOFuturesErrors.InvalidAmount();
 
         if (
-            IFGOChild(childContract).getIsPhysicalRightsHolder(
+            !IFGOChild(childContract).getIsPhysicalRightsHolder(
                 childId,
                 orderId,
                 address(this),

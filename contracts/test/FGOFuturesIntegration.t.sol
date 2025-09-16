@@ -246,7 +246,7 @@ contract FGOFuturesIntegrationTest is Test {
     function test_MEVBotRegistration() public {
         vm.startPrank(mevBot1);
         monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot();
+        mev.registerMEVBot(20);
         vm.stopPrank();
 
         FGOFuturesLibrary.MEVBot memory bot = mev.getMEVBot(mevBot1);
@@ -267,17 +267,17 @@ contract FGOFuturesIntegrationTest is Test {
 
         vm.startPrank(mevBot1);
         monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot();
+        mev.registerMEVBot(20);
         vm.stopPrank();
 
         vm.startPrank(mevBot2);
         monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot();
+        mev.registerMEVBot(20);
         vm.stopPrank();
 
         vm.startPrank(mevBot3);
         monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot();
+        mev.registerMEVBot(20);
         vm.stopPrank();
 
         vm.startPrank(rightsHolder);
@@ -330,17 +330,17 @@ contract FGOFuturesIntegrationTest is Test {
 
         vm.startPrank(mevBot1);
         monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot();
+        mev.registerMEVBot(20);
         vm.stopPrank();
 
         vm.startPrank(mevBot2);
         monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot();
+        mev.registerMEVBot(20);
         vm.stopPrank();
 
         vm.startPrank(mevBot3);
         monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot();
+        mev.registerMEVBot(20);
         vm.stopPrank();
 
         vm.startPrank(rightsHolder);
@@ -383,17 +383,17 @@ contract FGOFuturesIntegrationTest is Test {
 
         vm.startPrank(mevBot1);
         monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot();
+        mev.registerMEVBot(20);
         vm.stopPrank();
 
         vm.startPrank(mevBot2);
         monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot();
+        mev.registerMEVBot(20);
         vm.stopPrank();
 
         vm.startPrank(mevBot3);
         monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot();
+        mev.registerMEVBot(20);
         vm.stopPrank();
 
         vm.startPrank(rightsHolder);
@@ -492,17 +492,17 @@ contract FGOFuturesIntegrationTest is Test {
 
         vm.startPrank(mevBot1);
         monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot();
+        mev.registerMEVBot(20);
         vm.stopPrank();
 
         vm.startPrank(mevBot2);
         monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot();
+        mev.registerMEVBot(20);
         vm.stopPrank();
 
         vm.startPrank(mevBot3);
         monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot();
+        mev.registerMEVBot(20);
         vm.stopPrank();
 
         vm.startPrank(rightsHolder);

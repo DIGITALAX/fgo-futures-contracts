@@ -29,4 +29,5 @@ contract FGOFuturesErrors {
     error AlreadyStaked();
     error NoStakeToWithdraw();
     error NotSettled();
+    error AlreadyRegistered();
 }

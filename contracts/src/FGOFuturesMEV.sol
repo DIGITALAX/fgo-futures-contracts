@@ -21,6 +21,7 @@ contract FGOFuturesMEV is ReentrancyGuard {
     string public name;
 
     uint256 public constant BASIS_POINTS = 10000;
+    uint256 public constant MAX_STAKE_MULTIPLIER_BPS = 15000;
     uint256 private minStakeAmount;
     uint256 private maxSettlementDelay;
     uint256 private slashPercentageBPS;
@@ -91,33 +92,26 @@ contract FGOFuturesMEV is ReentrancyGuard {
         name = "FGOFuturesMEV";
     }
 
-    function registerMEVBot() external nonReentrant requiresQualifyingNFT {
+    function registerMEVBot(uint256 stakeAmount) external nonReentrant requiresQualifyingNFT {
+        if (stakeAmount < minStakeAmount) revert FGOFuturesErrors.InvalidAmount();
+        
         uint256 currentStake = stakedAmount[msg.sender];
-
-        if (currentStake >= minStakeAmount) {
-            return;
-        }
-
-        uint256 stakeNeeded = minStakeAmount - currentStake;
+        if (currentStake > 0) revert FGOFuturesErrors.AlreadyRegistered();
 
         address monaToken = accessControl.monaToken();
-        IERC20(monaToken).transferFrom(msg.sender, address(this), stakeNeeded);
+        IERC20(monaToken).transferFrom(msg.sender, address(this), stakeAmount);
 
-        stakedAmount[msg.sender] = minStakeAmount;
+        stakedAmount[msg.sender] = stakeAmount;
 
-        if (mevBots[msg.sender].botAddress == address(0)) {
-            mevBots[msg.sender] = FGOFuturesLibrary.MEVBot({
-                totalSettlements: 0,
-                averageDelaySeconds: 0,
-                monaStaked: minStakeAmount,
-                slashEvents: 0,
-                botAddress: msg.sender
-            });
-        } else {
-            mevBots[msg.sender].monaStaked = minStakeAmount;
-        }
+        mevBots[msg.sender] = FGOFuturesLibrary.MEVBot({
+            totalSettlements: 0,
+            averageDelaySeconds: 0,
+            monaStaked: stakeAmount,
+            slashEvents: 0,
+            botAddress: msg.sender
+        });
 
-        emit MEVBotRegistered(minStakeAmount, msg.sender);
+        emit MEVBotRegistered(stakeAmount, msg.sender);
     }
 
     function settleFuturesContract(
@@ -156,9 +150,12 @@ contract FGOFuturesMEV is ReentrancyGuard {
             emit MEVBotSlashed(slashAmount, msg.sender);
         }
 
-        uint256 totalReward = (fc.pricePerUnit *
+        uint256 baseReward = (fc.pricePerUnit *
             fc.quantity *
             fc.mevRewardBPS) / BASIS_POINTS;
+        
+        uint256 stakeMultiplier = _calculateStakeMultiplier(msg.sender);
+        uint256 totalReward = (baseReward * stakeMultiplier) / BASIS_POINTS;
 
         IERC20(monaToken).transferFrom(
             fc.originalHolder,
@@ -260,25 +257,34 @@ contract FGOFuturesMEV is ReentrancyGuard {
         return false;
     }
 
-    function updateMEVBotStake() external nonReentrant requiresQualifyingNFT {
+    function increaseStake(uint256 additionalStake) external nonReentrant requiresQualifyingNFT {
         if (mevBots[msg.sender].botAddress == address(0)) {
             revert FGOFuturesErrors.Unauthorized();
         }
-
-        uint256 currentStake = stakedAmount[msg.sender];
-
-        if (currentStake >= minStakeAmount) {
-            return;
-        }
-
-        uint256 stakeNeeded = minStakeAmount - currentStake;
+        if (additionalStake == 0) revert FGOFuturesErrors.InvalidAmount();
 
         address monaToken = accessControl.monaToken();
-        IERC20(monaToken).transferFrom(msg.sender, address(this), stakeNeeded);
+        IERC20(monaToken).transferFrom(msg.sender, address(this), additionalStake);
 
-        stakedAmount[msg.sender] = minStakeAmount;
-        mevBots[msg.sender].monaStaked = minStakeAmount;
+        stakedAmount[msg.sender] += additionalStake;
+        mevBots[msg.sender].monaStaked = stakedAmount[msg.sender];
 
-        emit MEVBotRegistered(minStakeAmount, msg.sender);
+        emit MEVBotRegistered(stakedAmount[msg.sender], msg.sender);
+    }
+
+    function _calculateStakeMultiplier(address bot) internal view returns (uint256) {
+        uint256 botStake = stakedAmount[bot];
+        if (botStake <= minStakeAmount) {
+            return BASIS_POINTS;
+        }
+        
+        uint256 stakeRatio = (botStake * BASIS_POINTS) / minStakeAmount;
+        uint256 multiplier = BASIS_POINTS + ((stakeRatio - BASIS_POINTS) / 2);
+        
+        if (multiplier > MAX_STAKE_MULTIPLIER_BPS) {
+            return MAX_STAKE_MULTIPLIER_BPS;
+        }
+        
+        return multiplier;
     }
 }
