@@ -1,0 +1,49 @@
+# Dependencies
+lib/
+**/lib/
+
+# Environment files
+*.env
+.env.*
+**/*.env
+Claude.md
+.claude/
+scripts/
+**/scripts/
+abis/
+**/abis/
+
+# Build outputs
+out/
+**/out/
+zkout/
+**/zkout/
+cache/
+**/cache/
+
+# Forge/Foundry specific
+broadcast/
+**/broadcast/
+
+# Node modules 
+node_modules/
+**/node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-*
+
+# Logs
+*.log
+logs/
+**/logs/
+
+

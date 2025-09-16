@@ -1,0 +1,14 @@
+type FuturesContractOpened @entity(immutable: true) {
+  id: Bytes!
+  contractId: BigInt! # uint256
+  childId: BigInt! # uint256
+  orderId: BigInt! # uint256
+  quantity: BigInt! # uint256
+  pricePerUnit: BigInt! # uint256
+  childContract: Bytes! # address
+  originalMarket: Bytes! # address
+  originalHolder: Bytes! # address
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}

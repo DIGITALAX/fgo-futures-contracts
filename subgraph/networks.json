@@ -1,0 +1,8 @@
+{
+  "lens-testnet": {
+    "FGOFuturesContract": {
+      "address": "0x26c644d587D802729bb22F2d0839444706b7B995",
+      "startBlock": 4120050
+    }
+  }
+}

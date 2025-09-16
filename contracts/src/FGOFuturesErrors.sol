@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: UNLICENSE
+pragma solidity ^0.8.28;
+
+contract FGOFuturesErrors {
+    error InvalidQuantity();
+    error InvalidPrice();
+    error InvalidAmount();
+    error InsufficientBalance();
+    error ContractNotActive();
+    error AlreadySettled();
+    error OrderNotActive();
+    error Unauthorized();
+    error NoPhysicalRights();
+    error NotDepositor();
+    error InsufficientEscrowedAmount();
+    error NoRightsDeposited();
+    error InvalidMEVBotCount();
+    error InvalidMEVReward();
+    error MEVBotLacksQualifyingNFT();
+    error TokenNotMinted();
+    error ExceedsAvailable();
+    error ContractSettled();
+    error NotSeller();
+    error AlreadyMinted();
+    error AlreadyExists();
+    error CantRemoveSelf();
+    error NotTrustedMEVBot();
+    error SettlementNotReady();
+    error AlreadyStaked();
+    error NoStakeToWithdraw();
+    error NotSettled();
+}

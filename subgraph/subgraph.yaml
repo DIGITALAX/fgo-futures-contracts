@@ -1,0 +1,26 @@
+specVersion: 1.2.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: FGOFuturesContract
+    network: lens-testnet
+    source:
+      address: "0x26c644d587D802729bb22F2d0839444706b7B995"
+      abi: FGOFuturesContract
+      startBlock: 4120050
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - FuturesContractOpened
+      abis:
+        - name: FGOFuturesContract
+          file: ./abis/FGOFuturesContract.json
+      eventHandlers:
+        - event: FuturesContractOpened(indexed uint256,uint256,uint256,uint256,uint256,address,address,address)
+          handler: handleFuturesContractOpened
+      file: ./src/fgo-futures-contract.ts
