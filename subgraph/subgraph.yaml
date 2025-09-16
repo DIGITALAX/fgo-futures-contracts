@@ -21,6 +21,90 @@ dataSources:
         - name: FGOFuturesContract
           file: ./abis/FGOFuturesContract.json
       eventHandlers:
-        - event: FuturesContractOpened(indexed uint256,uint256,uint256,uint256,uint256,address,address,address)
+        - event: FuturesContractOpened(indexed
+            uint256,uint256,uint256,uint256,uint256,address,address,address)
           handler: handleFuturesContractOpened
       file: ./src/fgo-futures-contract.ts
+  - kind: ethereum
+    name: FGOFuturesTrading
+    network: lens-testnet
+    source:
+      address: "0x37f11Ca71E0d705582fE5642dFb042f889470731"
+      abi: FGOFuturesTrading
+      startBlock: 4120053
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - ChildClaimedAfterSettlement
+        - RightsDeposited
+        - RightsWithdrawn
+      abis:
+        - name: FGOFuturesTrading
+          file: ./abis/FGOFuturesTrading.json
+      eventHandlers:
+        - event: ChildClaimedAfterSettlement(indexed uint256,indexed address,uint256,uint256)
+          handler: handleChildClaimedAfterSettlement
+        - event: RightsDeposited(indexed bytes32,indexed
+            address,address,address,uint256,uint256,uint256)
+          handler: handleRightsDeposited
+        - event: RightsWithdrawn(indexed bytes32,indexed address,uint256)
+          handler: handleRightsWithdrawn
+      file: ./src/fgo-futures-trading.ts
+  - kind: ethereum
+    name: FGOFuturesEscrow
+    network: lens-testnet
+    source:
+      address: "0x81F0371C542A6BBE3255992ab05B6DF7f5adF3a7"
+      abi: FGOFuturesEscrow
+      startBlock: 4120048
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - FGOFuturesEscrowChildClaimedAfterSettlement
+        - FGOFuturesEscrowRightsDeposited
+        - FGOFuturesEscrowRightsWithdrawn
+      abis:
+        - name: FGOFuturesEscrow
+          file: ./abis/FGOFuturesEscrow.json
+      eventHandlers:
+        - event: ChildClaimedAfterSettlement(indexed uint256,indexed address,uint256,uint256)
+          handler: handleChildClaimedAfterSettlement
+        - event: RightsDeposited(indexed bytes32,indexed
+            address,address,address,uint256,uint256,uint256)
+          handler: handleRightsDeposited
+        - event: RightsWithdrawn(indexed bytes32,indexed address,uint256)
+          handler: handleRightsWithdrawn
+      file: ./src/fgo-futures-escrow.ts
+  - kind: ethereum
+    name: FGOFuturesMEV
+    network: lens-testnet
+    source:
+      address: "0x9260E21bb68af2100bFd73060052f9C5464873D1"
+      abi: FGOFuturesMEV
+      startBlock: 4120057
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - ContractSettled
+        - MEVBotRegistered
+        - MEVBotSlashed
+        - StakeWithdrawn
+      abis:
+        - name: FGOFuturesMEV
+          file: ./abis/FGOFuturesMEV.json
+      eventHandlers:
+        - event: ContractSettled(indexed uint256,uint256,uint256,address)
+          handler: handleContractSettled
+        - event: MEVBotRegistered(uint256,address)
+          handler: handleMEVBotRegistered
+        - event: MEVBotSlashed(uint256,address)
+          handler: handleMEVBotSlashed
+        - event: StakeWithdrawn(uint256,address)
+          handler: handleStakeWithdrawn
+      file: ./src/fgo-futures-mev.ts

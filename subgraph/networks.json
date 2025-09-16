@@ -3,6 +3,15 @@
     "FGOFuturesContract": {
       "address": "0x26c644d587D802729bb22F2d0839444706b7B995",
       "startBlock": 4120050
+    },
+    "FGOFuturesTrading": {
+      "address": "0x37f11Ca71E0d705582fE5642dFb042f889470731"
+    },
+    "FGOFuturesEscrow": {
+      "address": "0x81F0371C542A6BBE3255992ab05B6DF7f5adF3a7"
+    },
+    "FGOFuturesMEV": {
+      "address": "0x9260E21bb68af2100bFd73060052f9C5464873D1"
     }
   }
 }

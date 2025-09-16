@@ -91,7 +91,13 @@ contract FGOFuturesContract is ReentrancyGuard {
             )
         );
         FGOFuturesLibrary.EscrowedRights memory rights = escrow
-            .getEscrowedRights(childId, orderId, childContract, originalMarket, msg.sender);
+            .getEscrowedRights(
+                childId,
+                orderId,
+                childContract,
+                originalMarket,
+                msg.sender
+            );
 
         if (rights.depositor != msg.sender)
             revert FGOFuturesErrors.NotDepositor();
@@ -110,7 +116,9 @@ contract FGOFuturesContract is ReentrancyGuard {
         ) revert FGOFuturesErrors.InvalidMEVReward();
 
         for (uint256 i = 0; i < trustedMEVBots.length; i++) {
-            FGOFuturesLibrary.MEVBot memory bot = mevContract.getMEVBot(trustedMEVBots[i]);
+            FGOFuturesLibrary.MEVBot memory bot = mevContract.getMEVBot(
+                trustedMEVBots[i]
+            );
             if (bot.botAddress == address(0)) {
                 revert FGOFuturesErrors.Unauthorized();
             }
@@ -235,11 +243,13 @@ contract FGOFuturesContract is ReentrancyGuard {
         return isValidERC721[token];
     }
 
-    function settleFuturesContract(uint256 contractId) external onlyMEVContract {
+    function settleFuturesContract(
+        uint256 contractId
+    ) external onlyMEVContract {
         if (futuresContracts[contractId].isSettled) {
             revert FGOFuturesErrors.AlreadySettled();
         }
-        
+
         futuresContracts[contractId].isSettled = true;
         futuresContracts[contractId].settledAt = block.timestamp;
     }
