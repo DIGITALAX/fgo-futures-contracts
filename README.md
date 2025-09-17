@@ -10,5 +10,5 @@ Por completar:
 
 ### Capa de Seguro
 [] Pagar si falla el fulfillment
-[] Cubrir stakes de MEV bots slasheados
+[] Cubrir stakes de Settlement bots slasheados
 [] Compensar por settlements retrasados

@@ -1,4 +1,4 @@
-type FuturesContractOpened @entity {
+type FuturesContract @entity {
   id: Bytes!
   contractId: BigInt! # uint256
   childId: BigInt! # uint256
@@ -11,109 +11,211 @@ type FuturesContractOpened @entity {
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
-}
-type ChildClaimedAfterSettlement @entity {
-  id: Bytes!
-  contractId: BigInt! # uint256
-  claimer: Bytes! # address
-  quantity: BigInt! # uint256
-  childId: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type RightsDeposited @entity {
-  id: Bytes!
-  rightsKey: Bytes! # bytes32
-  depositor: Bytes! # address
-  childContract: Bytes! # address
-  originalMarket: Bytes! # address
-  childId: BigInt! # uint256
-  orderId: BigInt! # uint256
-  amount: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
+  uri: String!
+  child: Child
+  createdAt: BigInt!
+  settledAt: BigInt!
+  settlementRewardBPS: BigInt!
+  isActive: Boolean!
+  isSettled: Boolean!
+  trustedSettlementBots: [Bytes!]
+  orders: [Order!]
+  childrenClaimed: [ChildClaimed!]
+  escrowed: EscrowedRight
+  metadata: Metadata
+  maxSettlementDelay: BigInt
+  timeSinceCompletion: BigInt
+  settledContract: ContractSettled
 }
 
-type RightsWithdrawn @entity {
+type OrderToContract @entity {
   id: Bytes!
-  rightsKey: Bytes! # bytes32
-  withdrawer: Bytes! # address
-  amount: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-type FGOFuturesEscrowChildClaimedAfterSettlement @entity {
-  id: Bytes!
-  contractId: BigInt! # uint256
-  claimer: Bytes! # address
-  quantity: BigInt! # uint256
-  childId: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
+  contractId: BigInt!
+  childId: BigInt!
+  orderId: BigInt!
+  childContract: Bytes!
+  originalMarket: Bytes!
+  futuresContract: Bytes!
 }
 
-type FGOFuturesEscrowRightsDeposited @entity {
+type Child @entity {
   id: Bytes!
-  rightsKey: Bytes! # bytes32
-  depositor: Bytes! # address
-  childContract: Bytes! # address
-  originalMarket: Bytes! # address
-  childId: BigInt! # uint256
-  orderId: BigInt! # uint256
-  amount: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
+  uri: String!
+  metadata: Metadata
+  physicalPrice: BigInt!
+  childContract: Bytes!
+  isTemplate: Boolean!
 }
 
-type FGOFuturesEscrowRightsWithdrawn @entity {
+type Metadata @entity {
+  id: String!
+  title: String
+  image: String
+}
+
+type FulfillerMetadata @entity {
+  id: String!
+  title: String
+  image: String
+  link: String
+}
+
+type SettlementBot @entity {
   id: Bytes!
-  rightsKey: Bytes! # bytes32
-  withdrawer: Bytes! # address
-  amount: BigInt! # uint256
+  stakeAmount: BigInt! # uint256
+  bot: Bytes! # address
+  totalSettlements: BigInt!
+  averageDelaySeconds: BigInt!
+  totalSlashEvents: BigInt!
+  totalAmountSlashed: BigInt!
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
+  settledContracts: [ContractSettled!]
 }
+
 type ContractSettled @entity {
   id: Bytes!
   contractId: BigInt! # uint256
   reward: BigInt! # uint256
   actualCompletionTime: BigInt! # uint256
-  mevBot: Bytes! # address
+  settlementBot: SettlementBot # address
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
+  contract: FuturesContract
+  emergency: Boolean!
+  settler: Bytes!
+  finalFillers: [Bytes!]
 }
 
-type MEVBotRegistered @entity {
+type ChildClaimed @entity {
   id: Bytes!
-  stakeAmount: BigInt! # uint256
-  bot: Bytes! # address
+  contractId: BigInt! # uint256
+  claimer: Bytes! # address
+  quantity: BigInt! # uint256
+  childId: BigInt! # uint256
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
+  contract: FuturesContract
 }
 
-type MEVBotSlashed @entity {
+type EscrowedRight @entity {
   id: Bytes!
-  slashAmount: BigInt! # uint256
-  bot: Bytes! # address
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type StakeWithdrawn @entity {
-  id: Bytes!
+  rightsKey: Bytes! # bytes32
+  depositor: Bytes! # address
+  childContract: Bytes! # address
+  originalMarket: Bytes! # address
+  childId: BigInt! # uint256
+  orderId: BigInt! # uint256
   amount: BigInt! # uint256
-  bot: Bytes! # address
   blockNumber: BigInt!
   blockTimestamp: BigInt!
+  amountUsedForFutures: BigInt!
   transactionHash: Bytes!
+  depositedAt: BigInt!
+  child: Child!
+  contracts: [FuturesContract!]
+  futuresCreated: Boolean!
+}
+
+type Order @entity(immutable: true) {
+  id: Bytes!
+  orderId: BigInt! # uint256
+  tokenId: BigInt! # uint256
+  quantity: BigInt! # uint256
+  pricePerUnit: BigInt! # uint256
+  seller: Bytes! # address
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  filledPrice: BigInt
+  contract: FuturesContract
+  filledQuantity: BigInt
+  transactionHash: Bytes!
+  isActive: Boolean!
+  filled: Boolean!
+  protocolFee: BigInt
+  lpFee: BigInt
+  filler: Bytes
+}
+
+type PhysicalRights @entity {
+  id: Bytes!
+  buyer: Bytes!
+  originalBuyer: Bytes!
+  childId: BigInt!
+  orderId: BigInt!
+  child: Child!
+  holder: Bytes!
+  guaranteedAmount: BigInt!
+  purchaseMarket: Bytes!
+  order: ChildOrder
+}
+
+type ChildOrder @entity {
+  id: Bytes!
+  orderStatus: BigInt!
+  parent: Parent
+  fulfillment: Fulfillment
+}
+
+type Fulfillment @entity {
+  id: Bytes!
+  orderId: BigInt!
+  parent: Parent!
+  currentStep: BigInt!
+  createdAt: BigInt!
+  lastUpdated: BigInt!
+  isPhysical: Boolean!
+  order: Order!
+  fulfillmentOrderSteps: [FulfillmentOrderStep!]
+}
+
+type FulfillmentOrderStep @entity {
+  id: Bytes!
+  notes: String
+  completedAt: BigInt
+  isCompleted: Boolean
+  stepIndex: BigInt
+}
+
+type FulfillmentWorkflow @entity {
+  id: Bytes!
+  parent: Parent!
+  digitalSteps: [FulfillmentStep!]
+  physicalSteps: [FulfillmentStep!]
+}
+
+type FulfillmentStep @entity {
+  id: Bytes!
+  workflow: FulfillmentWorkflow
+  fulfiller: Fulfiller
+  instructions: String
+  subPerformers: [SubPerformer!]
+}
+
+type SubPerformer @entity {
+  id: Bytes!
+  step: FulfillmentStep!
+  performer: Bytes!
+  splitBasisPoints: BigInt!
+}
+
+type Fulfiller @entity {
+  id: Bytes!
+  infraId: Bytes!
+  fulfillerId: BigInt
+  fulfiller: Bytes
+  uri: String
+  metadata: FulfillerMetadata
+}
+
+type Parent @entity {
+  id: Bytes!
+  designId: BigInt
+  parentContract: Bytes
+  metadata: Metadata
+  uri: String
+  workflow: FulfillmentWorkflow
 }

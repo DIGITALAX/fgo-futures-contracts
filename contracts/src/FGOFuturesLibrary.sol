@@ -14,20 +14,12 @@ contract FGOFuturesLibrary {
         bool futuresCreated;
     }
 
-    struct EscrowedNFT {
-        uint256 tokenId;
-        uint256 amount;
-        uint256 escrowedAt;
-        address nftContract;
-        bool isERC721;
-    }
-
     struct FuturesContract {
         uint256 childId;
         uint256 orderId;
         uint256 quantity;
         uint256 pricePerUnit;
-        uint256 mevRewardBPS;
+        uint256 settlementRewardBPS;
         uint256 tokenId;
         uint256 createdAt;
         uint256 settledAt;
@@ -36,7 +28,8 @@ contract FGOFuturesLibrary {
         address originalHolder;
         bool isActive;
         bool isSettled;
-        address[] trustedMEVBots;
+        address[] trustedSettlementBots;
+        string uri;
     }
 
     struct SellOrder {
@@ -49,7 +42,7 @@ contract FGOFuturesLibrary {
         bool isActive;
     }
 
-    struct MEVBot {
+    struct SettlementBot {
         uint256 totalSettlements;
         uint256 averageDelaySeconds;
         uint256 monaStaked;
@@ -62,16 +55,6 @@ contract FGOFuturesLibrary {
         uint256 settlementTime;
         uint256 delay;
         uint256 reward;
-        address mevBot;
-    }
-
-    struct TradeHistory {
-        uint256 tokenId;
-        uint256 quantity;
-        uint256 pricePerUnit;
-        uint256 blockNumber;
-        uint256 timestamp;
-        address from;
-        address to;
+        address settlementBot;
     }
 }

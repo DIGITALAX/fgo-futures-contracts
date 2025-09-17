@@ -14,9 +14,9 @@ contract FGOFuturesErrors {
     error NotDepositor();
     error InsufficientEscrowedAmount();
     error NoRightsDeposited();
-    error InvalidMEVBotCount();
-    error InvalidMEVReward();
-    error MEVBotLacksQualifyingNFT();
+    error InvalidSettlementBotCount();
+    error InvalidSettlementReward();
+    error SettlementBotLacksQualifyingNFT();
     error TokenNotMinted();
     error ExceedsAvailable();
     error ContractSettled();
@@ -24,10 +24,12 @@ contract FGOFuturesErrors {
     error AlreadyMinted();
     error AlreadyExists();
     error CantRemoveSelf();
-    error NotTrustedMEVBot();
+    error NotTrustedSettlementBot();
     error SettlementNotReady();
     error AlreadyStaked();
     error NoStakeToWithdraw();
     error NotSettled();
     error AlreadyRegistered();
+    error InsufficientStake();
+    error TokensAlreadyTraded();
 }

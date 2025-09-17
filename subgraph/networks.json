@@ -10,7 +10,7 @@
     "FGOFuturesEscrow": {
       "address": "0x81F0371C542A6BBE3255992ab05B6DF7f5adF3a7"
     },
-    "FGOFuturesMEV": {
+    "FGOFuturesSettlement": {
       "address": "0xdc8E9307d793E6f3199fC16212d9cd8769FDD3e0"
     }
   }

@@ -6,7 +6,7 @@ import "../src/FGOFuturesAccessControl.sol";
 import "../src/FGOFuturesContract.sol";
 import "../src/FGOFuturesEscrow.sol";
 import "../src/FGOFuturesTrading.sol";
-import "../src/FGOFuturesMEV.sol";
+import "../src/FGOFuturesSettlement.sol";
 import "../src/interfaces/IFGOPhysicalRights.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -145,7 +145,7 @@ contract FGOFuturesIntegrationTest is Test {
     FGOFuturesContract futuresContract;
     FGOFuturesEscrow escrow;
     FGOFuturesTrading trading;
-    FGOFuturesMEV mev;
+    FGOFuturesSettlement settlement;
 
     MockERC20 monaToken;
     MockERC721 qualifyingNFT;
@@ -155,9 +155,9 @@ contract FGOFuturesIntegrationTest is Test {
 
     address admin = address(0x1);
     address rightsHolder = address(0x2);
-    address mevBot1 = address(0x3);
-    address mevBot2 = address(0x4);
-    address mevBot3 = address(0x5);
+    address settlementBot1 = address(0x3);
+    address settlementBot2 = address(0x4);
+    address settlementBot3 = address(0x5);
     address trader1 = address(0x6);
     address trader2 = address(0x7);
     address lpTreasury = address(0x8);
@@ -168,7 +168,7 @@ contract FGOFuturesIntegrationTest is Test {
     uint256 constant ESCROW_AMOUNT = 100;
     uint256 constant FUTURES_AMOUNT = 50;
     uint256 constant PRICE_PER_UNIT = 1000 * 10 ** 18;
-    uint256 constant MEV_REWARD_BPS = 200;
+    uint256 constant Settlement_REWARD_BPS = 200;
     uint256 constant MIN_STAKE = 10000 * 10 ** 18;
 
     function setUp() public {
@@ -199,7 +199,7 @@ contract FGOFuturesIntegrationTest is Test {
             100,
             50
         );
-        mev = new FGOFuturesMEV(
+        settlement = new FGOFuturesSettlement(
             address(accessControl),
             address(futuresContract),
             address(escrow),
@@ -211,18 +211,19 @@ contract FGOFuturesIntegrationTest is Test {
 
         escrow.setFuturesContract(address(futuresContract));
         escrow.setTradingContract(address(trading));
-        futuresContract.setMEVContract(address(mev));
+        futuresContract.setSettlementContract(address(settlement));
+        futuresContract.setTradingContract(address(trading));
 
         monaToken.mint(rightsHolder, 1000000 * 10 ** 18);
-        monaToken.mint(mevBot1, 1000000 * 10 ** 18);
-        monaToken.mint(mevBot2, 1000000 * 10 ** 18);
-        monaToken.mint(mevBot3, 1000000 * 10 ** 18);
+        monaToken.mint(settlementBot1, 1000000 * 10 ** 18);
+        monaToken.mint(settlementBot2, 1000000 * 10 ** 18);
+        monaToken.mint(settlementBot3, 1000000 * 10 ** 18);
         monaToken.mint(trader1, 1000000 * 10 ** 18);
         monaToken.mint(trader2, 1000000 * 10 ** 18);
 
-        qualifyingNFT.mint(mevBot1, 1);
-        qualifyingNFT.mint(mevBot2, 2);
-        qualifyingNFT.mint(mevBot3, 3);
+        qualifyingNFT.mint(settlementBot1, 1);
+        qualifyingNFT.mint(settlementBot2, 2);
+        qualifyingNFT.mint(settlementBot3, 3);
 
         marketContract.setOrderReceipt(ORDER_ID, rightsHolder);
 
@@ -233,6 +234,14 @@ contract FGOFuturesIntegrationTest is Test {
 
     function test_DepositRights() public {
         vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            ESCROW_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
         escrow.depositPhysicalRights(
             CHILD_ID,
             ORDER_ID,
@@ -243,19 +252,27 @@ contract FGOFuturesIntegrationTest is Test {
         vm.stopPrank();
     }
 
-    function test_MEVBotRegistration() public {
-        vm.startPrank(mevBot1);
-        monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot(20);
+    function test_SettlementBotRegistration() public {
+        vm.startPrank(settlementBot1);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
 
-        FGOFuturesLibrary.MEVBot memory bot = mev.getMEVBot(mevBot1);
-        assertEq(bot.botAddress, mevBot1);
+        FGOFuturesLibrary.SettlementBot memory bot = settlement.getSettlementBot(settlementBot1);
+        assertEq(bot.botAddress, settlementBot1);
         assertEq(bot.monaStaked, MIN_STAKE);
     }
 
     function test_SettlementWorkflow() public {
         vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            ESCROW_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
         escrow.depositPhysicalRights(
             CHILD_ID,
             ORDER_ID,
@@ -265,36 +282,37 @@ contract FGOFuturesIntegrationTest is Test {
         );
         vm.stopPrank();
 
-        vm.startPrank(mevBot1);
-        monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot(20);
+        vm.startPrank(settlementBot1);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
 
-        vm.startPrank(mevBot2);
-        monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot(20);
+        vm.startPrank(settlementBot2);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
 
-        vm.startPrank(mevBot3);
-        monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot(20);
+        vm.startPrank(settlementBot3);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
 
         vm.startPrank(rightsHolder);
         address[] memory trustedBots = new address[](3);
-        trustedBots[0] = mevBot1;
-        trustedBots[1] = mevBot2;
-        trustedBots[2] = mevBot3;
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
 
         uint256 contractId = futuresContract.openFuturesContract(
             CHILD_ID,
             ORDER_ID,
             FUTURES_AMOUNT,
             PRICE_PER_UNIT,
-            MEV_REWARD_BPS,
+            Settlement_REWARD_BPS,
             address(childContract),
             address(marketContract),
-            trustedBots
+            trustedBots,
+            ""
         );
         vm.stopPrank();
 
@@ -304,21 +322,29 @@ contract FGOFuturesIntegrationTest is Test {
 
         uint256 totalReward = (FUTURES_AMOUNT *
             PRICE_PER_UNIT *
-            MEV_REWARD_BPS) / 10000;
+            Settlement_REWARD_BPS) / 10000;
 
         vm.startPrank(rightsHolder);
-        monaToken.approve(address(mev), totalReward);
+        monaToken.approve(address(settlement), totalReward);
         vm.stopPrank();
 
-        vm.startPrank(mevBot1);
-        mev.settleFuturesContract(contractId);
+        vm.startPrank(settlementBot1);
+        settlement.settleFuturesContract(contractId);
         vm.stopPrank();
 
-        assertTrue(mev.isContractSettled(contractId));
+        assertTrue(settlement.isContractSettled(contractId));
     }
 
     function test_CreateFuturesContract() public {
         vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            ESCROW_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
         escrow.depositPhysicalRights(
             CHILD_ID,
             ORDER_ID,
@@ -328,36 +354,37 @@ contract FGOFuturesIntegrationTest is Test {
         );
         vm.stopPrank();
 
-        vm.startPrank(mevBot1);
-        monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot(20);
+        vm.startPrank(settlementBot1);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
 
-        vm.startPrank(mevBot2);
-        monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot(20);
+        vm.startPrank(settlementBot2);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
 
-        vm.startPrank(mevBot3);
-        monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot(20);
+        vm.startPrank(settlementBot3);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
 
         vm.startPrank(rightsHolder);
         address[] memory trustedBots = new address[](3);
-        trustedBots[0] = mevBot1;
-        trustedBots[1] = mevBot2;
-        trustedBots[2] = mevBot3;
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
 
         uint256 contractId = futuresContract.openFuturesContract(
             CHILD_ID,
             ORDER_ID,
             FUTURES_AMOUNT,
             PRICE_PER_UNIT,
-            MEV_REWARD_BPS,
+            Settlement_REWARD_BPS,
             address(childContract),
             address(marketContract),
-            trustedBots
+            trustedBots,
+            ""
         );
         vm.stopPrank();
 
@@ -371,6 +398,14 @@ contract FGOFuturesIntegrationTest is Test {
 
     function test_FullWorkflow() public {
         vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            ESCROW_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
         escrow.depositPhysicalRights(
             CHILD_ID,
             ORDER_ID,
@@ -381,47 +416,56 @@ contract FGOFuturesIntegrationTest is Test {
 
         vm.stopPrank();
 
-        vm.startPrank(mevBot1);
-        monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot(20);
+        vm.startPrank(settlementBot1);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
 
-        vm.startPrank(mevBot2);
-        monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot(20);
+        vm.startPrank(settlementBot2);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
 
-        vm.startPrank(mevBot3);
-        monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot(20);
+        vm.startPrank(settlementBot3);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
 
         vm.startPrank(rightsHolder);
         address[] memory trustedBots = new address[](3);
-        trustedBots[0] = mevBot1;
-        trustedBots[1] = mevBot2;
-        trustedBots[2] = mevBot3;
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
 
         uint256 contractId = futuresContract.openFuturesContract(
             CHILD_ID,
             ORDER_ID,
             FUTURES_AMOUNT,
             PRICE_PER_UNIT,
-            MEV_REWARD_BPS,
+            Settlement_REWARD_BPS,
             address(childContract),
             address(marketContract),
-            trustedBots
+            trustedBots,
+            ""
         );
-        vm.stopPrank();
-
-        vm.startPrank(trader1);
-        monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT);
-        trading.buyInitialFutures(contractId, FUTURES_AMOUNT);
         vm.stopPrank();
 
         FGOFuturesLibrary.FuturesContract memory fc = futuresContract
             .getFuturesContract(contractId);
         uint256 tokenId = fc.tokenId;
+
+        vm.startPrank(rightsHolder);
+        uint256 initialOrderId = trading.createSellOrder(
+            tokenId,
+            FUTURES_AMOUNT,
+            PRICE_PER_UNIT
+        );
+        vm.stopPrank();
+
+        vm.startPrank(trader1);
+        monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT);
+        trading.buyFromOrder(initialOrderId, FUTURES_AMOUNT);
+        vm.stopPrank();
 
         vm.startPrank(trader1);
         uint256 sellOrderId = trading.createSellOrder(
@@ -443,20 +487,20 @@ contract FGOFuturesIntegrationTest is Test {
 
         vm.warp(2000);
 
-        vm.startPrank(mevBot1);
+        vm.startPrank(settlementBot1);
         vm.expectRevert();
-        mev.settleFuturesContract(contractId);
+        settlement.settleFuturesContract(contractId);
         vm.stopPrank();
 
         vm.startPrank(rightsHolder);
         monaToken.approve(
-            address(mev),
-            (FUTURES_AMOUNT * PRICE_PER_UNIT * MEV_REWARD_BPS) / 10000
+            address(settlement),
+            (FUTURES_AMOUNT * PRICE_PER_UNIT * Settlement_REWARD_BPS) / 10000
         );
         vm.stopPrank();
 
-        vm.startPrank(mevBot1);
-        mev.settleFuturesContract(contractId);
+        vm.startPrank(settlementBot1);
+        settlement.settleFuturesContract(contractId);
         vm.stopPrank();
 
         uint256 trader1Balance = trading.balanceOf(trader1, tokenId);
@@ -476,11 +520,19 @@ contract FGOFuturesIntegrationTest is Test {
         assertEq(trading.balanceOf(trader2, tokenId), 0);
 
         assertTrue(futuresContract.getFuturesContract(contractId).isSettled);
-        assertTrue(mev.isContractSettled(contractId));
+        assertTrue(settlement.isContractSettled(contractId));
     }
 
-    function test_MEVBotSlashing() public {
+    function test_SettlementBotSlashing() public {
         vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            ESCROW_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
         escrow.depositPhysicalRights(
             CHILD_ID,
             ORDER_ID,
@@ -490,36 +542,37 @@ contract FGOFuturesIntegrationTest is Test {
         );
         vm.stopPrank();
 
-        vm.startPrank(mevBot1);
-        monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot(20);
+        vm.startPrank(settlementBot1);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
 
-        vm.startPrank(mevBot2);
-        monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot(20);
+        vm.startPrank(settlementBot2);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
 
-        vm.startPrank(mevBot3);
-        monaToken.approve(address(mev), MIN_STAKE);
-        mev.registerMEVBot(20);
+        vm.startPrank(settlementBot3);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
 
         vm.startPrank(rightsHolder);
         address[] memory trustedBots = new address[](3);
-        trustedBots[0] = mevBot1;
-        trustedBots[1] = mevBot2;
-        trustedBots[2] = mevBot3;
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
 
         uint256 contractId = futuresContract.openFuturesContract(
             CHILD_ID,
             ORDER_ID,
             FUTURES_AMOUNT,
             PRICE_PER_UNIT,
-            MEV_REWARD_BPS,
+            Settlement_REWARD_BPS,
             address(childContract),
             address(marketContract),
-            trustedBots
+            trustedBots,
+            ""
         );
         vm.stopPrank();
 
@@ -527,23 +580,462 @@ contract FGOFuturesIntegrationTest is Test {
 
         vm.warp(6000);
 
-        uint256 initialStake = mev.getStakedAmount(mevBot1);
+        FGOFuturesLibrary.SettlementBot memory settlementBot = settlement.getSettlementBot(settlementBot1);
 
         vm.startPrank(rightsHolder);
         monaToken.approve(
-            address(mev),
-            (FUTURES_AMOUNT * PRICE_PER_UNIT * MEV_REWARD_BPS) / 10000
+            address(settlement),
+            (FUTURES_AMOUNT * PRICE_PER_UNIT * Settlement_REWARD_BPS) / 10000
         );
         vm.stopPrank();
 
-        vm.startPrank(mevBot1);
-        mev.settleFuturesContract(contractId);
+        vm.startPrank(settlementBot1);
+        settlement.settleFuturesContract(contractId);
         vm.stopPrank();
 
-        uint256 finalStake = mev.getStakedAmount(mevBot1);
-        assertTrue(finalStake < initialStake);
+        uint256 finalStake = settlement.getSettlementBot(settlementBot1).monaStaked;
+        assertTrue(finalStake < settlementBot.monaStaked);
 
-        FGOFuturesLibrary.MEVBot memory bot = mev.getMEVBot(mevBot1);
+        FGOFuturesLibrary.SettlementBot memory bot = settlement.getSettlementBot(settlementBot1);
         assertEq(bot.slashEvents, 1);
+    }
+
+    function testCancelFuturesContractSuccess() public {
+        vm.startPrank(settlementBot1);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot2);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot3);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
+        escrow.depositPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            address(marketContract),
+            address(childContract)
+        );
+
+        address[] memory trustedBots = new address[](3);
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
+
+        uint256 contractId = futuresContract.openFuturesContract(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            PRICE_PER_UNIT,
+            Settlement_REWARD_BPS,
+            address(childContract),
+            address(marketContract),
+            trustedBots,
+            ""
+        );
+
+        FGOFuturesLibrary.EscrowedRights memory rightsBefore = escrow
+            .getEscrowedRights(
+                CHILD_ID,
+                ORDER_ID,
+                address(childContract),
+                address(marketContract),
+                rightsHolder
+            );
+
+        assertEq(rightsBefore.amountUsedForFutures, FUTURES_AMOUNT);
+
+        futuresContract.cancelFuturesContract(contractId);
+
+        FGOFuturesLibrary.EscrowedRights memory rightsAfter = escrow
+            .getEscrowedRights(
+                CHILD_ID,
+                ORDER_ID,
+                address(childContract),
+                address(marketContract),
+                rightsHolder
+            );
+
+        assertEq(rightsAfter.amountUsedForFutures, 0);
+
+        FGOFuturesLibrary.FuturesContract memory fc = futuresContract
+            .getFuturesContract(contractId);
+        assertFalse(fc.isActive);
+        vm.stopPrank();
+    }
+
+    function testCancelFuturesContractFailsAfterPurchase() public {
+        vm.startPrank(settlementBot1);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot2);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot3);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
+        escrow.depositPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            address(marketContract),
+            address(childContract)
+        );
+
+        address[] memory trustedBots = new address[](3);
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
+
+        uint256 contractId = futuresContract.openFuturesContract(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            PRICE_PER_UNIT,
+            Settlement_REWARD_BPS,
+            address(childContract),
+            address(marketContract),
+            trustedBots,
+            ""
+        );
+        vm.stopPrank();
+
+        FGOFuturesLibrary.FuturesContract memory fc = futuresContract
+            .getFuturesContract(contractId);
+        uint256 tokenId = fc.tokenId;
+
+        vm.startPrank(rightsHolder);
+        uint256 initialOrderId = trading.createSellOrder(
+            tokenId,
+            FUTURES_AMOUNT,
+            PRICE_PER_UNIT
+        );
+        vm.stopPrank();
+
+        vm.startPrank(trader1);
+        monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT);
+        trading.buyFromOrder(initialOrderId, FUTURES_AMOUNT);
+        vm.stopPrank();
+
+        vm.startPrank(rightsHolder);
+        vm.expectRevert(FGOFuturesErrors.TokensAlreadyTraded.selector);
+        futuresContract.cancelFuturesContract(contractId);
+        vm.stopPrank();
+    }
+
+    function testCancelFuturesContractUnauthorized() public {
+        vm.startPrank(settlementBot1);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot2);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot3);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
+        escrow.depositPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            address(marketContract),
+            address(childContract)
+        );
+
+        address[] memory trustedBots = new address[](3);
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
+
+        uint256 contractId = futuresContract.openFuturesContract(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            PRICE_PER_UNIT,
+            Settlement_REWARD_BPS,
+            address(childContract),
+            address(marketContract),
+            trustedBots,
+            ""
+        );
+        vm.stopPrank();
+
+        vm.startPrank(trader1);
+        vm.expectRevert(FGOFuturesErrors.Unauthorized.selector);
+        futuresContract.cancelFuturesContract(contractId);
+        vm.stopPrank();
+    }
+
+    function testEmergencySettlement() public {
+        vm.startPrank(settlementBot1);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot2);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot3);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            ESCROW_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
+        escrow.depositPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            ESCROW_AMOUNT,
+            address(marketContract),
+            address(childContract)
+        );
+
+        address[] memory trustedBots = new address[](3);
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
+
+        uint256 contractId = futuresContract.openFuturesContract(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            PRICE_PER_UNIT,
+            Settlement_REWARD_BPS,
+            address(childContract),
+            address(marketContract),
+            trustedBots,
+            ""
+        );
+        vm.stopPrank();
+
+        fulfillmentContract.setFulfillmentStatus(ORDER_ID, 3, 3);
+
+        vm.startPrank(settlementBot1);
+        qualifyingNFT.transferFrom(settlementBot1, address(0xdead), 1);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot2);
+        qualifyingNFT.transferFrom(settlementBot2, address(0xdead), 2);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot3);
+        qualifyingNFT.transferFrom(settlementBot3, address(0xdead), 3);
+        vm.stopPrank();
+
+        vm.warp(6000);
+
+        vm.startPrank(rightsHolder);
+        settlement.emergencySettleFuturesContract(contractId);
+        vm.stopPrank();
+
+        assertTrue(settlement.isContractSettled(contractId));
+        assertTrue(futuresContract.getFuturesContract(contractId).isSettled);
+    }
+
+    function testEmergencySettlementFailsWhenSettlementBotsCanStillSettle() public {
+        vm.startPrank(settlementBot1);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot2);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot3);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            ESCROW_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
+        escrow.depositPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            ESCROW_AMOUNT,
+            address(marketContract),
+            address(childContract)
+        );
+
+        address[] memory trustedBots = new address[](3);
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
+
+        uint256 contractId = futuresContract.openFuturesContract(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            PRICE_PER_UNIT,
+            Settlement_REWARD_BPS,
+            address(childContract),
+            address(marketContract),
+            trustedBots,
+            ""
+        );
+        vm.stopPrank();
+
+        fulfillmentContract.setFulfillmentStatus(ORDER_ID, 3, 3);
+
+        vm.warp(6000);
+
+        vm.startPrank(rightsHolder);
+        vm.expectRevert(FGOFuturesErrors.Unauthorized.selector);
+        settlement.emergencySettleFuturesContract(contractId);
+        vm.stopPrank();
+    }
+
+    function testEmergencySettlementByFuturesHolder() public {
+        vm.startPrank(settlementBot1);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot2);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot3);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            ESCROW_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
+        escrow.depositPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            ESCROW_AMOUNT,
+            address(marketContract),
+            address(childContract)
+        );
+
+        address[] memory trustedBots = new address[](3);
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
+
+        uint256 contractId = futuresContract.openFuturesContract(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            PRICE_PER_UNIT,
+            Settlement_REWARD_BPS,
+            address(childContract),
+            address(marketContract),
+            trustedBots,
+            ""
+        );
+        vm.stopPrank();
+
+        FGOFuturesLibrary.FuturesContract memory fc = futuresContract
+            .getFuturesContract(contractId);
+        uint256 tokenId = fc.tokenId;
+
+        vm.startPrank(rightsHolder);
+        uint256 initialOrderId = trading.createSellOrder(
+            tokenId,
+            FUTURES_AMOUNT,
+            PRICE_PER_UNIT
+        );
+        vm.stopPrank();
+
+        vm.startPrank(trader1);
+        monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT);
+        trading.buyFromOrder(initialOrderId, FUTURES_AMOUNT);
+        vm.stopPrank();
+
+        fulfillmentContract.setFulfillmentStatus(ORDER_ID, 3, 3);
+
+        vm.startPrank(settlementBot1);
+        qualifyingNFT.transferFrom(settlementBot1, address(0xdead), 1);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot2);
+        qualifyingNFT.transferFrom(settlementBot2, address(0xdead), 2);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot3);
+        qualifyingNFT.transferFrom(settlementBot3, address(0xdead), 3);
+        vm.stopPrank();
+
+        vm.warp(6000);
+
+        vm.startPrank(trader1);
+        settlement.emergencySettleFuturesContract(contractId);
+        vm.stopPrank();
+
+        assertTrue(settlement.isContractSettled(contractId));
+        assertTrue(futuresContract.getFuturesContract(contractId).isSettled);
     }
 }

@@ -9,7 +9,7 @@ import {
 import { BigInt, Address } from "@graphprotocol/graph-ts"
 import { ContractSettled } from "../generated/schema"
 import { ContractSettled as ContractSettledEvent } from "../generated/FGOFuturesMEV/FGOFuturesMEV"
-import { handleContractSettled } from "../src/fgo-futures-mev"
+import { handleContractSettled } from "../src/fgo-futures-settlement"
 import { createContractSettledEvent } from "./fgo-futures-mev-utils"
 
 // Tests structure (matchstick-as >=0.5.0)

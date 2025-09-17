@@ -16,42 +16,19 @@ dataSources:
       apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
-        - FuturesContractOpened
+        - FuturesContract
       abis:
         - name: FGOFuturesContract
           file: ./abis/FGOFuturesContract.json
+        - name: FGOChild
+          file: ./abis/FGOChild.json
       eventHandlers:
         - event: FuturesContractOpened(indexed
             uint256,uint256,uint256,uint256,uint256,address,address,address)
           handler: handleFuturesContractOpened
+        - event: FuturesContractCancelled(indexed uint256,address)
+          handler: handleFuturesContractCancelled
       file: ./src/fgo-futures-contract.ts
-  - kind: ethereum
-    name: FGOFuturesTrading
-    network: lens-testnet
-    source:
-      address: "0x37f11Ca71E0d705582fE5642dFb042f889470731"
-      abi: FGOFuturesTrading
-      startBlock: 4120053
-    mapping:
-      kind: ethereum/events
-      apiVersion: 0.0.9
-      language: wasm/assemblyscript
-      entities:
-        - ChildClaimedAfterSettlement
-        - RightsDeposited
-        - RightsWithdrawn
-      abis:
-        - name: FGOFuturesTrading
-          file: ./abis/FGOFuturesTrading.json
-      eventHandlers:
-        - event: ChildClaimedAfterSettlement(indexed uint256,indexed address,uint256,uint256)
-          handler: handleChildClaimedAfterSettlement
-        - event: RightsDeposited(indexed bytes32,indexed
-            address,address,address,uint256,uint256,uint256)
-          handler: handleRightsDeposited
-        - event: RightsWithdrawn(indexed bytes32,indexed address,uint256)
-          handler: handleRightsWithdrawn
-      file: ./src/fgo-futures-trading.ts
   - kind: ethereum
     name: FGOFuturesEscrow
     network: lens-testnet
@@ -64,12 +41,13 @@ dataSources:
       apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
-        - FGOFuturesEscrowChildClaimedAfterSettlement
-        - FGOFuturesEscrowRightsDeposited
-        - FGOFuturesEscrowRightsWithdrawn
+        - ChildClaimed
+        - EscrowedRight
       abis:
         - name: FGOFuturesEscrow
           file: ./abis/FGOFuturesEscrow.json
+        - name: FGOFuturesContract
+          file: ./abis/FGOFuturesContract.json
       eventHandlers:
         - event: ChildClaimedAfterSettlement(indexed uint256,indexed address,uint256,uint256)
           handler: handleChildClaimedAfterSettlement
@@ -80,31 +58,234 @@ dataSources:
           handler: handleRightsWithdrawn
       file: ./src/fgo-futures-escrow.ts
   - kind: ethereum
-    name: FGOFuturesMEV
+    name: FGOFuturesSettlement
     network: lens-testnet
     source:
       address: "0xdc8E9307d793E6f3199fC16212d9cd8769FDD3e0"
-      abi: FGOFuturesMEV
+      abi: FGOFuturesSettlement
       startBlock: 4120057
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
+        - SettlementBot
         - ContractSettled
-        - MEVBotRegistered
-        - MEVBotSlashed
-        - StakeWithdrawn
       abis:
-        - name: FGOFuturesMEV
-          file: ./abis/FGOFuturesMEV.json
+        - name: FGOFuturesSettlement
+          file: ./abis/FGOFuturesSettlement.json
+        - name: FGOFuturesTrading
+          file: ./abis/FGOFuturesTrading.json
       eventHandlers:
         - event: ContractSettled(indexed uint256,uint256,uint256,address)
           handler: handleContractSettled
-        - event: MEVBotRegistered(uint256,address)
-          handler: handleMEVBotRegistered
-        - event: MEVBotSlashed(uint256,address)
-          handler: handleMEVBotSlashed
+        - event: EmergencySettlement(indexed uint256,address,uint256)
+          handler: handleEmergencySettlement
+        - event: SettlementBotRegistered(uint256,address)
+          handler: handleSettlementBotRegistered
+        - event: SettlementBotSlashed(uint256,address)
+          handler: handleSettlementBotSlashed
         - event: StakeWithdrawn(uint256,address)
           handler: handleStakeWithdrawn
-      file: ./src/fgo-futures-mev.ts
+      file: ./src/fgo-futures-settlement.ts
+  - kind: ethereum
+    name: FGOFactory
+    network: lens-testnet
+    source:
+      address: "0x906b05fb0e297d6c8c1d812ae872d2daa6c4b3c8"
+      abi: FGOFactory
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Child
+        - PhysicalRights
+      abis:
+        - name: FGOFactory
+          file: ./abis/FGOFactory.json
+        - name: FGOChild
+          file: ./abis/FGOChild.json
+      eventHandlers:
+        - event: ChildContractDeployed(indexed uint256,indexed bytes32,indexed address,address)
+          handler: handleChildContractDeployed
+        - event: InfrastructureDeployed(indexed bytes32,indexed address,indexed address,address,address,address)
+          handler: handleInfrastructureDeployed
+        - event: TemplateContractDeployed(indexed uint256,indexed bytes32,indexed address,address)
+          handler: handleTemplateContractDeployed
+        - event: MarketContractDeployed(indexed bytes32,indexed address,address)
+          handler: handleMarketContractDeployed
+      file: ./src/fgo-factory.ts
+  - kind: ethereum
+    name: FGOFuturesTrading
+    network: lens-testnet
+    source:
+      address: "0x37f11Ca71E0d705582fE5642dFb042f889470731"
+      abi: FGOFuturesTrading
+      startBlock: 4120053
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Order
+      abis:
+        - name: FGOFuturesTrading
+          file: ./abis/FGOFuturesTrading.json
+        - name: FGOFuturesContract
+          file: ./abis/FGOFuturesContract.json
+      eventHandlers:
+        - event: FeesCollected(indexed uint256,uint256,uint256)
+          handler: handleFeesCollected
+        - event: SellOrderCancelled(indexed uint256,address)
+          handler: handleSellOrderCancelled
+        - event: SellOrderCreated(indexed uint256,indexed uint256,uint256,uint256,address)
+          handler: handleSellOrderCreated
+        - event: SellOrderFilled(indexed uint256,uint256,uint256,address)
+          handler: handleSellOrderFilled
+      file: ./src/fgo-futures-trading.ts
+templates:
+  - name: FGOChild
+    kind: ethereum/contract
+    network: lens-testnet
+    source:
+      abi: FGOChild
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/fgo-child.ts
+      entities:
+        - Child
+        - Metadata
+        - PhysicalRights
+      abis:
+        - name: FGOChild
+          file: ./abis/FGOChild.json
+      eventHandlers:
+        - event: ChildCreated(indexed uint256,indexed address)
+          handler: handleChildCreated
+        - event: ChildDeleted(indexed uint256)
+          handler: handleChildDeleted
+        - event: ChildMinted(indexed uint256,indexed uint256,indexed uint256,address,address,bool)
+          handler: handleChildMinted
+        - event: PhysicalRightsTransferred(uint256,uint256,uint256,address,address,address)
+          handler: handlePhysicalRightsTransferred
+  - name: Metadata
+    kind: file/ipfs
+    mapping:
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/ds-handlers.ts
+      handler: handleMetadata
+      entities:
+        - Metadata
+      abis:
+        - name: FGOFuturesContract
+          file: ./abis/FGOFuturesContract.json
+  - name: FulfillerMetadata
+    kind: file/ipfs
+    mapping:
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/ds-handlers.ts
+      handler: handleFulfillerMetadata
+      entities:
+        - FulfillerMetadata
+      abis:
+        - name: FGOFuturesContract
+          file: ./abis/FGOFuturesContract.json
+  - name: FGOMarket
+    kind: ethereum/contract
+    network: lens-testnet
+    source:
+      abi: FGOMarket
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/fgo-market.ts
+      entities:
+        - ChildOrder
+      abis:
+        - name: FGOMarket
+          file: ./abis/FGOMarket.json
+        - name: FGOFulfillers
+          file: ./abis/FGOFulfillers.json
+      eventHandlers:
+        - event: OrderExecuted(indexed uint256,indexed address,uint256[])
+          handler: handleOrderExecuted
+  - name: FGOFulfillment
+    kind: ethereum/contract
+    network: lens-testnet
+    source:
+      abi: FGOFulfillment
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/fgo-fulfillment.ts
+      entities:
+        - Fulfillment
+      abis:
+        - name: FGOFulfillment
+          file: ./abis/FGOFulfillment.json
+        - name: FGOMarket
+          file: ./abis/FGOMarket.json
+      eventHandlers:
+        - event: FulfillmentStarted(indexed uint256,indexed uint256)
+          handler: handleFulfillmentStarted
+        - event: FulfillmentCompleted(indexed uint256)
+          handler: handleFulfillmentCompleted
+        - event: OrderStatusUpdated(indexed uint256,uint8)
+          handler: handleOrderStatusUpdated
+        - event: StepCompleted(indexed uint256,indexed uint256,indexed address,string)
+          handler: handleStepCompleted
+  - name: FGOFulfillers
+    kind: ethereum/contract
+    network: lens-testnet
+    source:
+      abi: FGOFulfillers
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/fgo-fulfillers.ts
+      entities:
+        - Fulfiller
+      abis:
+        - name: FGOFulfillers
+          file: ./abis/FGOFulfillers.json
+      eventHandlers:
+        - event: FulfillerCreated(indexed uint256,indexed address)
+          handler: handleFulfillerCreated
+        - event: FulfillerUpdated(indexed uint256)
+          handler: handleFulfillerUpdated
+        - event: FulfillerDeleted(indexed uint256)
+          handler: handleFulfillerDeleted
+        - event: FulfillerWalletTransferred(indexed uint256,address,address)
+          handler: handleFulfillerWalletTransferred
+  - name: FGOParent
+    kind: ethereum/contract
+    network: lens-testnet
+    source:
+      abi: FGOParent
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/fgo-parent.ts
+      entities:
+        - Parent
+        - SubPerformer
+        - FulfillmentStep
+        - FulfillmentWorkflow
+      abis:
+        - name: FGOParent
+          file: ./abis/FGOParent.json
+      eventHandlers:
+        - event: ParentUpdated(indexed uint256)
+          handler: handleParentUpdated
+        - event: ParentReserved(indexed uint256,indexed address)
+          handler: handleParentReserved

@@ -216,6 +216,20 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
         escrowedRights[rightsKey].futuresCreated = true;
     }
 
+    function markRightsAsUnused(
+        bytes32 rightsKey,
+        uint256 amountToFree
+    ) external onlyFuturesContract {
+        if (escrowedRights[rightsKey].amountUsedForFutures < amountToFree) {
+            revert FGOFuturesErrors.InvalidAmount();
+        }
+        escrowedRights[rightsKey].amountUsedForFutures -= amountToFree;
+        
+        if (escrowedRights[rightsKey].amountUsedForFutures == 0) {
+            escrowedRights[rightsKey].futuresCreated = false;
+        }
+    }
+
     function setFuturesContract(address _futuresContract) external onlyAdmin {
         futuresContract = FGOFuturesContract(_futuresContract);
     }

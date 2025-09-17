@@ -1,62 +1,85 @@
+import { ByteArray, Bytes } from "@graphprotocol/graph-ts";
 import {
-  ChildClaimedAfterSettlement as ChildClaimedAfterSettlementEvent,
-  RightsDeposited as RightsDepositedEvent,
-  RightsWithdrawn as RightsWithdrawnEvent,
-} from "../generated/FGOFuturesTrading/FGOFuturesTrading"
-import {
-  ChildClaimedAfterSettlement,
-  RightsDeposited,
-  RightsWithdrawn,
-} from "../generated/schema"
+  FeesCollected as FeesCollectedEvent,
+  FGOFuturesTrading,
+  SellOrderCancelled as SellOrderCancelledEvent,
+  SellOrderCreated as SellOrderCreatedEvent,
+  SellOrderFilled as SellOrderFilledEvent,
+} from "../generated/FGOFuturesTrading/FGOFuturesTrading";
+import { Order, FuturesContract } from "../generated/schema";
+import { FGOFuturesContract } from "../generated/FGOFuturesContract/FGOFuturesContract";
 
-export function handleChildClaimedAfterSettlement(
-  event: ChildClaimedAfterSettlementEvent,
-): void {
-  let entity = new ChildClaimedAfterSettlement(
-    event.transaction.hash.concatI32(event.logIndex.toI32()),
-  )
-  entity.contractId = event.params.contractId
-  entity.claimer = event.params.claimer
-  entity.quantity = event.params.quantity
-  entity.childId = event.params.childId
+export function handleFeesCollected(event: FeesCollectedEvent): void {
+  let entity = Order.load(
+    Bytes.fromByteArray(ByteArray.fromBigInt(event.params.orderId))
+  );
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
+  if (entity) {
+    entity.protocolFee = event.params.protocolFee;
+    entity.lpFee = event.params.lpFee;
+    entity.save();
+  }
 }
 
-export function handleRightsDeposited(event: RightsDepositedEvent): void {
-  let entity = new RightsDeposited(
-    event.transaction.hash.concatI32(event.logIndex.toI32()),
-  )
-  entity.rightsKey = event.params.rightsKey
-  entity.depositor = event.params.depositor
-  entity.childContract = event.params.childContract
-  entity.originalMarket = event.params.originalMarket
-  entity.childId = event.params.childId
-  entity.orderId = event.params.orderId
-  entity.amount = event.params.amount
+export function handleSellOrderCancelled(event: SellOrderCancelledEvent): void {
+  let entity = Order.load(
+    Bytes.fromByteArray(ByteArray.fromBigInt(event.params.orderId))
+  );
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
-
-  entity.save()
+  if (entity) {
+    entity.isActive = false;
+    entity.save();
+  }
 }
 
-export function handleRightsWithdrawn(event: RightsWithdrawnEvent): void {
-  let entity = new RightsWithdrawn(
-    event.transaction.hash.concatI32(event.logIndex.toI32()),
-  )
-  entity.rightsKey = event.params.rightsKey
-  entity.withdrawer = event.params.withdrawer
-  entity.amount = event.params.amount
+export function handleSellOrderCreated(event: SellOrderCreatedEvent): void {
+  let entity = new Order(
+    Bytes.fromByteArray(ByteArray.fromBigInt(event.params.orderId))
+  );
+  let trading = FGOFuturesTrading.bind(event.address);
+  let contractId = trading.getContractIdByToken(event.params.tokenId);
 
-  entity.blockNumber = event.block.number
-  entity.blockTimestamp = event.block.timestamp
-  entity.transactionHash = event.transaction.hash
+  let futuresId = Bytes.fromByteArray(ByteArray.fromBigInt(contractId));
 
-  entity.save()
+  entity.orderId = event.params.orderId;
+  entity.tokenId = event.params.tokenId;
+  entity.quantity = event.params.quantity;
+  entity.pricePerUnit = event.params.pricePerUnit;
+  entity.seller = event.params.seller;
+  entity.filled = false;
+  entity.isActive = true;
+  entity.contract = futuresId;
+  entity.blockNumber = event.block.number;
+  entity.blockTimestamp = event.block.timestamp;
+  entity.transactionHash = event.transaction.hash;
+
+  entity.save();
+
+  let futuresEntity = FuturesContract.load(futuresId);
+
+  if (futuresEntity) {
+    let orders = futuresEntity.orders;
+
+    if (!orders) {
+      orders = [];
+    }
+    orders.push(entity.id);
+    futuresEntity.orders = orders;
+
+    futuresEntity.save();
+  }
+}
+
+export function handleSellOrderFilled(event: SellOrderFilledEvent): void {
+  let entity = Order.load(
+    Bytes.fromByteArray(ByteArray.fromBigInt(event.params.orderId))
+  );
+
+  if (entity) {
+    entity.filled = true;
+    entity.filledPrice = event.params.totalPrice;
+    entity.filledQuantity = event.params.quantity;
+    entity.filler = event.params.buyer;
+    entity.save();
+  }
 }
