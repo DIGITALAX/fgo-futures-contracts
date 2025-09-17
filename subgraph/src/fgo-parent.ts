@@ -45,64 +45,6 @@ export function handleParentReserved(event: ParentReservedEvent): void {
 
   fulfillmentWorkflow.parent = entity.id;
 
-  let digitalSteps: Bytes[] = [];
-  for (let i = 0; i < data.workflow.digitalSteps.length; i++) {
-    let step = new FulfillmentStep(
-      Bytes.fromUTF8(
-        event.address.toHexString() +
-          "-" +
-          event.params.designId.toString() +
-          "-" +
-          i.toString() +
-          "-digital"
-      )
-    );
-
-    step.workflow = fulfillmentWorkflow.id;
-    step.instructions = data.workflow.digitalSteps[i].instructions;
-    step.fulfiller = Bytes.fromUTF8(
-      infraId.toHexString() +
-        "-" +
-        data.workflow.digitalSteps[i].primaryPerformer.toHexString()
-    );
-
-    let subPerformers: Bytes[] = [];
-    for (
-      let j = 0;
-      j < data.workflow.digitalSteps[i].subPerformers.length;
-      j++
-    ) {
-      let subPerformer = new SubPerformer(
-        Bytes.fromUTF8(
-          event.address.toHexString() +
-            "-" +
-            event.params.designId.toString() +
-            "-" +
-            i.toString() +
-            "-" +
-            data.workflow.digitalSteps[i].subPerformers[
-              j
-            ].performer.toHexString() +
-            "-digital"
-        )
-      );
-
-      subPerformer.step = step.id;
-      subPerformer.performer =
-        data.workflow.digitalSteps[i].subPerformers[j].performer;
-      subPerformer.splitBasisPoints =
-        data.workflow.digitalSteps[i].subPerformers[j].splitBasisPoints;
-      subPerformer.save();
-
-      subPerformers.push(subPerformer.id);
-    }
-
-    step.subPerformers = subPerformers;
-
-    digitalSteps.push(step.id);
-    step.save();
-  }
-
   let physicalSteps: Bytes[] = [];
   for (let i = 0; i < data.workflow.physicalSteps.length; i++) {
     let step = new FulfillmentStep(
@@ -163,7 +105,6 @@ export function handleParentReserved(event: ParentReservedEvent): void {
     step.save();
   }
 
-  fulfillmentWorkflow.digitalSteps = digitalSteps;
   fulfillmentWorkflow.physicalSteps = physicalSteps;
   fulfillmentWorkflow.save();
 

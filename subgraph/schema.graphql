@@ -183,7 +183,6 @@ type FulfillmentOrderStep @entity {
 type FulfillmentWorkflow @entity {
   id: Bytes!
   parent: Parent!
-  digitalSteps: [FulfillmentStep!]
   physicalSteps: [FulfillmentStep!]
 }
 
@@ -209,6 +208,7 @@ type Fulfiller @entity {
   fulfiller: Bytes
   uri: String
   metadata: FulfillerMetadata
+  childOrders: [ChildOrder!]
 }
 
 type Parent @entity {

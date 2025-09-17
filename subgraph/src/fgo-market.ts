@@ -3,7 +3,13 @@ import {
   FGOMarket,
   OrderExecuted as OrderExecutedEvent,
 } from "../generated/templates/FGOMarket/FGOMarket";
-import { ChildOrder } from "../generated/schema";
+import {
+  ChildOrder,
+  Fulfiller,
+  FulfillmentStep,
+  FulfillmentWorkflow,
+  Parent,
+} from "../generated/schema";
 
 export function handleOrderExecuted(event: OrderExecutedEvent): void {
   for (let i = 0; i < event.params.orderIds.length; i++) {
@@ -36,5 +42,58 @@ export function handleOrderExecuted(event: OrderExecutedEvent): void {
     );
 
     entity.save();
+
+    let parent = Parent.load(entity.parent as Bytes);
+    if (parent) {
+      if (parent.workflow) {
+        let workflow = FulfillmentWorkflow.load(parent.workflow as Bytes);
+        if (workflow) {
+          if (workflow.physicalSteps) {
+            let addedToFulfillers = new Set<string>();
+
+            for (
+              let i = 0;
+              i < (workflow.physicalSteps as Bytes[]).length;
+              i++
+            ) {
+              let step = FulfillmentStep.load(
+                Bytes.fromUTF8(
+                  data.params.parentContract.toHexString() +
+                    "-" +
+                    data.params.parentId.toString() +
+                    "-" +
+                    i.toString() +
+                    "-physical"
+                )
+              );
+              if (step && step.fulfiller) {
+                let fulfillerHex = (step.fulfiller as Bytes).toHexString();
+                if (!addedToFulfillers.has(fulfillerHex)) {
+                  addedToFulfillers.add(fulfillerHex);
+
+                  let fulfiller = Fulfiller.load(step.fulfiller as Bytes);
+                  if (fulfiller) {
+                    let childOrders = fulfiller.childOrders;
+
+                    if (!childOrders) {
+                      childOrders = [];
+                    }
+                    childOrders.push(
+                      Bytes.fromUTF8(
+                        event.address.toHexString() +
+                          "-" +
+                          currentOrder.toString()
+                      )
+                    );
+                    fulfiller.childOrders = childOrders;
+                    fulfiller.save();
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }
