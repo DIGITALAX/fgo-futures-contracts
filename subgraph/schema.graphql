@@ -15,6 +15,7 @@ type FuturesContract @entity {
   child: Child
   createdAt: BigInt!
   settledAt: BigInt!
+  futuresSettlementDate: BigInt!
   settlementRewardBPS: BigInt!
   isActive: Boolean!
   isSettled: Boolean!
@@ -26,6 +27,7 @@ type FuturesContract @entity {
   maxSettlementDelay: BigInt
   timeSinceCompletion: BigInt
   settledContract: ContractSettled
+  fulfillerSettlement: BigInt
 }
 
 type OrderToContract @entity {
@@ -78,7 +80,7 @@ type ContractSettled @entity {
   id: Bytes!
   contractId: BigInt! # uint256
   reward: BigInt! # uint256
-  actualCompletionTime: BigInt! # uint256
+  futuresSettlementDate: BigInt! # uint256
   settlementBot: SettlementBot # address
   blockNumber: BigInt!
   blockTimestamp: BigInt!
@@ -103,6 +105,7 @@ type ChildClaimed @entity {
 
 type EscrowedRight @entity {
   id: Bytes!
+  estimatedDeliveryDuration: BigInt!
   rightsKey: Bytes! # bytes32
   depositor: Bytes! # address
   childContract: Bytes! # address
@@ -120,7 +123,7 @@ type EscrowedRight @entity {
   futuresCreated: Boolean!
 }
 
-type Order @entity(immutable: true) {
+type Order @entity {
   id: Bytes!
   orderId: BigInt! # uint256
   tokenId: BigInt! # uint256
@@ -129,15 +132,24 @@ type Order @entity(immutable: true) {
   seller: Bytes! # address
   blockNumber: BigInt!
   blockTimestamp: BigInt!
-  filledPrice: BigInt
+  fillers: [Filler!]
   contract: FuturesContract
-  filledQuantity: BigInt
   transactionHash: Bytes!
   isActive: Boolean!
   filled: Boolean!
   protocolFee: BigInt
   lpFee: BigInt
+}
+
+type Filler @entity {
+  id: Bytes!
   filler: Bytes
+  quantity: BigInt
+  price: BigInt
+  blockNumber: BigInt
+  blockTimestamp: BigInt
+  transactionHash: Bytes
+  order: Order
 }
 
 type PhysicalRights @entity {
@@ -148,9 +160,12 @@ type PhysicalRights @entity {
   orderId: BigInt!
   child: Child!
   holder: Bytes!
+  receiver: Bytes
+  estimatedDeliveryDuration: BigInt!
   guaranteedAmount: BigInt!
   purchaseMarket: Bytes!
   order: ChildOrder
+  blockTimestamp: BigInt!
 }
 
 type ChildOrder @entity {
@@ -183,6 +198,7 @@ type FulfillmentOrderStep @entity {
 type FulfillmentWorkflow @entity {
   id: Bytes!
   parent: Parent!
+  estimatedDeliveryDuration: BigInt
   physicalSteps: [FulfillmentStep!]
 }
 
@@ -191,6 +207,7 @@ type FulfillmentStep @entity {
   workflow: FulfillmentWorkflow
   fulfiller: Fulfiller
   instructions: String
+  primaryPerformer: Bytes!
   subPerformers: [SubPerformer!]
 }
 
@@ -219,3 +236,27 @@ type Parent @entity {
   uri: String
   workflow: FulfillmentWorkflow
 }
+
+type Supplier @entity {
+  id: Bytes!
+  infraId: Bytes!
+  supplier: Bytes
+  supplierId: BigInt
+  uri: String
+  blockNumber: BigInt
+  blockTimestamp: BigInt
+  transactionHash: Bytes
+  isActive: Boolean
+  version: BigInt
+  metadata: SupplierMetadata
+}
+
+type SupplierMetadata @entity {
+  id: String!
+  image: String
+  title: String
+  description: String
+  link: String
+}
+
+

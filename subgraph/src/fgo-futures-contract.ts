@@ -1,4 +1,4 @@
-import { ByteArray, Bytes, store } from "@graphprotocol/graph-ts";
+import { BigInt, ByteArray, Bytes, store } from "@graphprotocol/graph-ts";
 import {
   FuturesContractOpened as FuturesContractOpenedEvent,
   FuturesContractCancelled as FuturesContractCancelledEvent,
@@ -30,6 +30,7 @@ export function handleFuturesContractOpened(
   entity.childContract = event.params.childContract;
   entity.originalMarket = event.params.originalMarket;
   entity.originalHolder = event.params.originalHolder;
+  entity.futuresSettlementDate = data.futuresSettlementDate;
   entity.escrowed = futures.getContractIdToRightsKey(event.params.contractId);
 
   entity.blockNumber = event.block.number;
@@ -38,7 +39,7 @@ export function handleFuturesContractOpened(
 
   let childEntity = Child.load(
     Bytes.fromUTF8(
-      entity.childContract.toHexString() + "-" + entity.childId.toString()
+      entity.childContract.toHexString() + "-" + entity.childId.toHexString()
     )
   );
 
@@ -71,9 +72,9 @@ export function handleFuturesContractOpened(
     Bytes.fromUTF8(
       event.params.childContract.toHexString() +
         "-" +
-        event.params.childId.toString() +
+        event.params.childId.toHexString() +
         "-" +
-        event.params.orderId.toString() +
+        event.params.orderId.toHexString() +
         "-" +
         event.params.originalMarket.toHexString()
     )
@@ -110,12 +111,23 @@ export function handleFuturesContractCancelled(
     let orderLookupId = Bytes.fromUTF8(
       entity.childContract.toHexString() +
         "-" +
-        entity.childId.toString() +
+        entity.childId.toHexString() +
         "-" +
-        entity.orderId.toString() +
+        entity.orderId.toHexString() +
         "-" +
         entity.originalMarket.toHexString()
     );
+
+    if (entity.escrowed) {
+      let escrow = EscrowedRight.load(entity.escrowed as Bytes);
+      if (escrow) {
+        escrow.amountUsedForFutures = BigInt.fromI32(0);
+        escrow.futuresCreated = false;
+        escrow.save();
+      }
+    }
+
+    store.remove("Order", entity.id.toHexString());
     store.remove("OrderToContract", orderLookupId.toHexString());
     store.remove("FuturesContract", entity.id.toHexString());
   }

@@ -104,12 +104,21 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
         );
 
         if (escrowedRights[rightsKey].amount == 0) {
+            FGOLibrary.PhysicalRights memory pr = IFGOChild(childContract)
+                .getPhysicalRights(
+                    childId,
+                    orderId,
+                    msg.sender,
+                    originalMarket
+                );
+
             escrowedRights[rightsKey] = FGOFuturesLibrary.EscrowedRights({
                 childId: childId,
                 orderId: orderId,
                 amount: amount,
                 amountUsedForFutures: 0,
                 depositedAt: block.timestamp,
+                estimatedDeliveryDuration: pr.estimatedDeliveryDuration,
                 childContract: childContract,
                 originalMarket: originalMarket,
                 depositor: msg.sender,
@@ -162,6 +171,11 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
             revert FGOFuturesErrors.InsufficientEscrowedAmount();
 
         rights.amount -= amount;
+        if (rights.amount == 0) {
+            hasDepositedRights[rights.childContract][rights.childId][
+                rights.orderId
+            ][rights.originalMarket] = false;
+        }
 
         IFGOChild(rights.childContract).transferPhysicalRights(
             rights.childId,
@@ -224,7 +238,7 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
             revert FGOFuturesErrors.InvalidAmount();
         }
         escrowedRights[rightsKey].amountUsedForFutures -= amountToFree;
-        
+
         if (escrowedRights[rightsKey].amountUsedForFutures == 0) {
             escrowedRights[rightsKey].futuresCreated = false;
         }
@@ -239,20 +253,26 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
     }
 
     function claimChildAfterSettlement(uint256 contractId) external {
-        FGOFuturesLibrary.FuturesContract memory fc = futuresContract.getFuturesContract(contractId);
-        
+        FGOFuturesLibrary.FuturesContract memory fc = futuresContract
+            .getFuturesContract(contractId);
+
         if (!fc.isSettled) revert FGOFuturesErrors.NotSettled();
-        
+
         uint256 userBalance = tradingContract.balanceOf(msg.sender, fc.tokenId);
         if (userBalance == 0) revert FGOFuturesErrors.InsufficientBalance();
-        
-        bytes32 rightsKey = futuresContract.getContractIdToRightsKey(contractId);
-        FGOFuturesLibrary.EscrowedRights storage rights = escrowedRights[rightsKey];
-        
-        if (rights.amount < userBalance) revert FGOFuturesErrors.InsufficientEscrowedAmount();
-        
+
+        bytes32 rightsKey = futuresContract.getContractIdToRightsKey(
+            contractId
+        );
+        FGOFuturesLibrary.EscrowedRights storage rights = escrowedRights[
+            rightsKey
+        ];
+
+        if (rights.amount < userBalance)
+            revert FGOFuturesErrors.InsufficientEscrowedAmount();
+
         tradingContract.burn(msg.sender, fc.tokenId, userBalance);
-        
+
         IERC1155(rights.childContract).safeTransferFrom(
             address(this),
             msg.sender,
@@ -260,10 +280,27 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
             userBalance,
             ""
         );
-        
+
         rights.amount -= userBalance;
-        
-        emit ChildClaimedAfterSettlement(contractId, msg.sender, userBalance, rights.childId);
+        if (rights.amountUsedForFutures < userBalance) {
+            revert FGOFuturesErrors.InvalidAmount();
+        }
+        rights.amountUsedForFutures -= userBalance;
+        if (rights.amountUsedForFutures == 0) {
+            rights.futuresCreated = false;
+        }
+        if (rights.amount == 0) {
+            hasDepositedRights[rights.childContract][rights.childId][
+                rights.orderId
+            ][rights.originalMarket] = false;
+        }
+
+        emit ChildClaimedAfterSettlement(
+            contractId,
+            msg.sender,
+            userBalance,
+            rights.childId
+        );
     }
 
     function getAvailableAmount(

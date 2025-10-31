@@ -6,7 +6,14 @@ import {
   InfrastructureDeployed as InfrastructureEvent,
   ParentContractDeployed as ParentContractDeployedEvent,
 } from "../generated/FGOFactory/FGOFactory";
-import { FGOChild, FGOFulfillers, FGOMarket, FGOParent } from "../generated/templates";
+import {
+  FGOChild,
+  FGOFulfillers,
+  FGOFulfillment,
+  FGOMarket,
+  FGOParent,
+} from "../generated/templates";
+import { FGOMarket as FGOMarketContract } from "../generated/templates/FGOMarket/FGOMarket";
 
 export function handleChildContractDeployed(
   event: ChildContractDeployedEvent
@@ -22,6 +29,8 @@ export function handleMarketContractDeployed(
   let context = new DataSourceContext();
   context.setBytes("infraId", event.params.infraId);
   FGOMarket.createWithContext(event.params.marketContract, context);
+  let marketContract = FGOMarketContract.bind(event.params.marketContract);
+  FGOFulfillment.createWithContext(marketContract.fulfillment(), context);
 }
 
 export function handleTemplateContractDeployed(

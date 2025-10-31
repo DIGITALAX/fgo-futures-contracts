@@ -1,10 +1,10 @@
-import { BigInt, Bytes, ByteArray, Address } from "@graphprotocol/graph-ts";
+import { BigInt, Bytes } from "@graphprotocol/graph-ts";
 import {
   Fulfillment,
   FulfillmentOrderStep,
-  ChildOrder,
-  FuturesContract,
-  OrderToContract,
+  FulfillmentWorkflow,
+  Order,
+  Parent,
 } from "../generated/schema";
 import {
   StepCompleted as StepCompletedEvent,
@@ -13,8 +13,6 @@ import {
   FGOFulfillment,
 } from "../generated/templates/FGOFulfillment/FGOFulfillment";
 import { FGOMarket } from "../generated/templates/FGOMarket/FGOMarket";
-import { FGOFuturesSettlement } from "../generated/FGOFuturesSettlement/FGOFuturesSettlement";
-import { FGOFuturesContract } from "../generated/FGOFuturesContract/FGOFuturesContract";
 
 export function handleStepCompleted(event: StepCompletedEvent): void {
   let fulfillment = FGOFulfillment.bind(event.address);
@@ -23,7 +21,7 @@ export function handleStepCompleted(event: StepCompletedEvent): void {
     Bytes.fromUTF8(
       event.address.toHexString() +
         "-" +
-        event.params.orderId.toString() +
+        event.params.orderId.toHexString() +
         data.parentContract.toHexString() +
         data.parentId.toHexString()
     )
@@ -35,40 +33,12 @@ export function handleStepCompleted(event: StepCompletedEvent): void {
     entity.save();
   }
 
+  let step = data.steps[event.params.stepIndex.toI32()];
+
   let marketAddress = fulfillment.market();
   let market = FGOMarket.bind(marketAddress);
   let orderData = market.getOrderReceipt(event.params.orderId);
 
-  let orderLookupId = Bytes.fromUTF8(
-    orderData.params.childContract.toHexString() +
-      "-" +
-      orderData.params.childId.toString() +
-      "-" +
-      event.params.orderId.toString() +
-      "-" +
-      marketAddress.toHexString()
-  );
-
-  let orderLookup = OrderToContract.load(orderLookupId);
-  if (orderLookup) {
-    let contract = FuturesContract.load(
-      Bytes.fromByteArray(ByteArray.fromBigInt(orderLookup.contractId))
-    );
-
-    if (contract) {
-      let futuresContract = FGOFuturesContract.bind(
-        orderLookup.futuresContract as Address
-      );
-      let settlement = FGOFuturesSettlement.bind(
-        futuresContract.settlementContract()
-      );
-      contract.timeSinceCompletion = settlement.getMaxSettlementDelay();
-      contract.maxSettlementDelay = data.lastUpdated;
-      contract.save();
-    }
-  }
-
-  let step = data.steps[event.params.stepIndex.toI32()];
   let isPhysical = orderData.params.isPhysical;
 
   let stepId =
@@ -76,7 +46,7 @@ export function handleStepCompleted(event: StepCompletedEvent): void {
     "-" +
     data.parentId.toHexString() +
     "-" +
-    event.params.stepIndex.toString();
+    event.params.stepIndex.toHexString();
 
   if (isPhysical) {
     stepId = stepId + "-physical";
@@ -122,17 +92,8 @@ export function handleFulfillmentCompleted(
     entitySteps.save();
   }
 
-  let entityOrder = ChildOrder.load(
-    Bytes.fromUTF8(
-      marketAddress.toHexString() + "-" + event.params.orderId.toString()
-    )
-  );
 
-  if (entityOrder) {
-    let rec = market.getOrderReceipt(event.params.orderId);
-    entityOrder.orderStatus = BigInt.fromI32(rec.status);
-    entityOrder.save();
-  }
+
 }
 
 export function handleFulfillmentStarted(event: FulfillmentStartedEvent): void {
@@ -143,7 +104,7 @@ export function handleFulfillmentStarted(event: FulfillmentStartedEvent): void {
     Bytes.fromUTF8(
       event.address.toHexString() +
         "-" +
-        event.params.orderId.toString() +
+        event.params.orderId.toHexString() +
         data.parentContract.toHexString() +
         event.params.parentId.toHexString()
     )
@@ -151,13 +112,19 @@ export function handleFulfillmentStarted(event: FulfillmentStartedEvent): void {
 
   entity.orderId = event.params.orderId;
   entity.parent = Bytes.fromUTF8(
-    data.parentContract.toHexString() + "-" + event.params.parentId.toString()
+    data.parentContract.toHexString() + "-" + event.params.parentId.toHexString()
   );
+  let marketAddress = fulfillment.market();
+
+  let market = FGOMarket.bind(marketAddress);
+
+  let orderData = market.getOrderReceipt(event.params.orderId);
+  entity.isPhysical = orderData.params.isPhysical;
   entity.currentStep = data.currentStep;
   entity.createdAt = event.block.timestamp;
   entity.lastUpdated = event.block.timestamp;
   entity.order = Bytes.fromUTF8(
-    fulfillment.market().toHexString() + "-" + entity.orderId.toString()
+    fulfillment.market().toHexString() + "-" + entity.orderId.toHexString()
   );
 
   entity.save();

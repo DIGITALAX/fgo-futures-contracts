@@ -5,6 +5,7 @@ pragma solidity ^0.8.28;
 contract FGOLibrary {
     enum Status {
         RESERVED,
+        SUPPLY_PENDING,
         ACTIVE,
         DISABLED
     }
@@ -15,11 +16,18 @@ contract FGOLibrary {
         BOTH
     }
 
+    struct Futures {
+        uint256 deadline;
+        uint256 maxDigitalEditions;
+        bool isFutures;
+    }
+
     struct CreateChildParams {
         uint256 digitalPrice;
         uint256 physicalPrice;
         uint256 version;
         uint256 maxPhysicalEditions;
+        uint256 maxDigitalEditions;
         Availability availability;
         bool isImmutable;
         bool digitalMarketsOpenToAll;
@@ -27,6 +35,7 @@ contract FGOLibrary {
         bool digitalReferencesOpenToAll;
         bool physicalReferencesOpenToAll;
         bool standaloneAllowed;
+        Futures futures;
         string childUri;
         address[] authorizedMarkets;
     }
@@ -49,10 +58,15 @@ contract FGOLibrary {
         uint256 physicalPrice;
         uint256 version;
         uint256 maxPhysicalEditions;
+        uint256 maxDigitalEditions;
         uint256 currentPhysicalEditions;
         uint256 uriVersion;
         uint256 usageCount;
         uint256 supplyCount;
+        uint256 totalReservedSupply;
+        uint256 totalPrepaidAmount;
+        uint256 totalPrepaidUsed;
+        uint256 currentDigitalEditions;
         address supplier;
         Status status;
         Availability availability;
@@ -63,6 +77,7 @@ contract FGOLibrary {
         bool physicalReferencesOpenToAll;
         bool standaloneAllowed;
         bool isTemplate;
+        Futures futures;
         string uri;
         address[] authorizedMarkets;
         URIVersion[] uriHistory;
@@ -71,14 +86,28 @@ contract FGOLibrary {
     struct ChildReference {
         uint256 childId;
         uint256 amount;
+        uint256 prepaidAmount;
+        uint256 prepaidUsed;
         address childContract;
+        string placementURI;
+    }
+
+    struct ChildSupplyRequest {
+        uint256 existingChildId;
+        uint256 quantity;
+        uint256 preferredMaxPrice;
+        uint256 deadline;
+        address existingChildContract;
+        bool isPhysical;
+        bool fulfilled;
+        string customSpec;
         string placementURI;
     }
 
     struct DemandEntry {
         uint256 childId;
-        address childContract;
         uint256 cumulativeDemand;
+        address childContract;
     }
 
     struct URIVersion {
@@ -104,20 +133,10 @@ contract FGOLibrary {
         bool physicalMarketsOpenToAll;
         string uri;
         ChildReference[] childReferences;
+        ChildSupplyRequest[] supplyRequests;
         address[] authorizedMarkets;
         uint256[] tokenIds;
         FulfillmentWorkflow workflow;
-    }
-
-    enum CompositeStatus {
-        PENDING,
-        FULFILLED,
-        REFUNDED
-    }
-
-    struct Currency {
-        uint256 weiAmount;
-        uint256 rate;
     }
 
     struct FulfillerProfile {
@@ -155,6 +174,7 @@ contract FGOLibrary {
     }
 
     struct FulfillmentWorkflow {
+        uint256 estimatedDeliveryDuration;
         FulfillmentStep[] digitalSteps;
         FulfillmentStep[] physicalSteps;
     }
@@ -170,6 +190,7 @@ contract FGOLibrary {
         bool physicalMarketsOpenToAll;
         string uri;
         ChildReference[] childReferences;
+        ChildSupplyRequest[] supplyRequests;
         address[] authorizedMarkets;
         FulfillmentWorkflow workflow;
     }
@@ -197,6 +218,7 @@ contract FGOLibrary {
         uint256 timestamp;
         address parentContract;
         bool isPending;
+        bool isPhysical;
     }
 
     struct ChildMarketApprovalRequest {
@@ -213,10 +235,12 @@ contract FGOLibrary {
         uint256 timestamp;
         address templateContract;
         bool isPending;
+        bool isPhysical;
     }
 
     struct PhysicalRights {
         uint256 guaranteedAmount;
+        uint256 estimatedDeliveryDuration;
         address purchaseMarket;
     }
 
@@ -227,9 +251,9 @@ contract FGOLibrary {
         address fulfillers;
         address deployer;
         address superAdmin;
-        string uri;
         bool exists;
         bool isActive;
+        string uri;
     }
 
     struct ChildContractData {

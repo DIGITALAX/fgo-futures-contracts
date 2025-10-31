@@ -35,7 +35,7 @@ contract FGOFuturesSettlement is ReentrancyGuard {
     event ContractSettled(
         uint256 indexed contractId,
         uint256 reward,
-        uint256 actualCompletionTime,
+        uint256 futuresSettlementDate,
         address settlementBot
     );
     event EmergencySettlement(
@@ -44,6 +44,7 @@ contract FGOFuturesSettlement is ReentrancyGuard {
         uint256 settlementTime
     );
     event StakeWithdrawn(uint256 amount, address bot);
+    event StakeIncreased(uint256 totalStake, address bot);
 
     modifier onlyAdmin() {
         if (!accessControl.isAdmin(msg.sender)) {
@@ -133,17 +134,10 @@ contract FGOFuturesSettlement is ReentrancyGuard {
         if (contractSettled[contractId])
             revert FGOFuturesErrors.AlreadySettled();
 
-        address fulfillment = IFGOMarket(fc.originalMarket).fulfillment();
-
-        FGOMarketLibrary.FulfillmentStatus memory status = IFGOFulfillment(
-            fulfillment
-        ).getFulfillmentStatus(fc.orderId);
-
-        if (status.currentStep != status.steps.length)
+        if (block.timestamp < fc.futuresSettlementDate)
             revert FGOFuturesErrors.SettlementNotReady();
 
-        uint256 actualCompletionTime = status.lastUpdated;
-        uint256 settlementDelay = block.timestamp - actualCompletionTime;
+        uint256 settlementDelay = block.timestamp - fc.futuresSettlementDate;
         address monaToken = accessControl.monaToken();
 
         if (settlementDelay > maxSettlementDelay) {
@@ -174,7 +168,6 @@ contract FGOFuturesSettlement is ReentrancyGuard {
         futuresContract.settleFuturesContract(contractId);
 
         settlements[contractId] = FGOFuturesLibrary.SettlementMetrics({
-            actualCompletionTime: actualCompletionTime,
             settlementTime: block.timestamp,
             delay: settlementDelay,
             reward: totalReward,
@@ -191,7 +184,7 @@ contract FGOFuturesSettlement is ReentrancyGuard {
         emit ContractSettled(
             contractId,
             totalReward,
-            actualCompletionTime,
+            fc.futuresSettlementDate,
             msg.sender
         );
     }
@@ -230,18 +223,12 @@ contract FGOFuturesSettlement is ReentrancyGuard {
             revert FGOFuturesErrors.Unauthorized();
         }
 
-        address fulfillment = IFGOMarket(fc.originalMarket).fulfillment();
-        FGOMarketLibrary.FulfillmentStatus memory status = IFGOFulfillment(
-            fulfillment
-        ).getFulfillmentStatus(fc.orderId);
-
-        if (status.currentStep != status.steps.length)
+        if (block.timestamp < fc.futuresSettlementDate)
             revert FGOFuturesErrors.SettlementNotReady();
 
-        uint256 actualCompletionTime = status.lastUpdated;
-        uint256 timeSinceCompletion = block.timestamp - actualCompletionTime;
+        uint256 timeSinceSettlementDate = block.timestamp - fc.futuresSettlementDate;
 
-        if (timeSinceCompletion <= maxSettlementDelay)
+        if (timeSinceSettlementDate <= maxSettlementDelay)
             revert FGOFuturesErrors.SettlementNotReady();
 
         bool anyBotCanSettle = false;
@@ -259,9 +246,8 @@ contract FGOFuturesSettlement is ReentrancyGuard {
         futuresContract.settleFuturesContract(contractId);
 
         settlements[contractId] = FGOFuturesLibrary.SettlementMetrics({
-            actualCompletionTime: actualCompletionTime,
             settlementTime: block.timestamp,
-            delay: timeSinceCompletion,
+            delay: timeSinceSettlementDate,
             reward: 0,
             settlementBot: msg.sender
         });
@@ -336,7 +322,7 @@ contract FGOFuturesSettlement is ReentrancyGuard {
 
         settlementBots[msg.sender].monaStaked += additionalStake;
 
-        emit SettlementBotRegistered(settlementBots[msg.sender].monaStaked, msg.sender);
+        emit StakeIncreased(settlementBots[msg.sender].monaStaked, msg.sender);
     }
 
     function _calculateStakeMultiplier(

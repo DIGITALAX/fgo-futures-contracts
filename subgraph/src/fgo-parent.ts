@@ -1,8 +1,8 @@
 import { Bytes, BigInt, dataSource } from "@graphprotocol/graph-ts";
 import {
   ParentUpdated as ParentUpdatedEvent,
-  ParentReserved as ParentReservedEvent,
   FGOParent,
+  ParentCreated as ParentCreatedEvent,
 } from "../generated/templates/FGOParent/FGOParent";
 import {
   FulfillmentStep,
@@ -11,25 +11,46 @@ import {
   SubPerformer,
 } from "../generated/schema";
 import { Metadata as MetadataTemplate } from "../generated/templates";
+import { FGOAccessControl } from "../generated/templates/FGOAccessControl/FGOAccessControl";
 
-export function handleParentReserved(event: ParentReservedEvent): void {
-  let entityId = Bytes.fromUTF8(
-    event.address.toHexString() + "-" + event.params.designId.toString()
+export function handleParentUpdated(event: ParentUpdatedEvent): void {
+  let entity = Parent.load(
+    Bytes.fromUTF8(
+      event.address.toHexString() + "-" + event.params.designId.toHexString()
+    )
   );
-  let entity = Parent.load(entityId);
-  if (!entity) {
-    entity = new Parent(entityId);
+
+  if (entity) {
+    let parent = FGOParent.bind(event.address);
+    let data = parent.getDesignTemplate(entity.designId as BigInt);
+
+    entity.uri = data.uri;
+
+    let ipfsHash = (entity.uri as string).split("/").pop();
+    if (ipfsHash != null) {
+      entity.metadata = ipfsHash;
+      MetadataTemplate.create(ipfsHash);
+    }
+
+    entity.save();
   }
+}
+
+export function handleParentCreated(event: ParentCreatedEvent): void {
+  let entityId = Bytes.fromUTF8(
+    event.address.toHexString() + "-" + event.params.designId.toHexString()
+  );
+  let entity = new Parent(entityId);
+
   let parent = FGOParent.bind(event.address);
 
   entity.designId = event.params.designId;
   entity.parentContract = event.address;
 
   let data = parent.getDesignTemplate(entity.designId as BigInt);
-
-  entity.uri = data.uri;
-  let context = dataSource.context();
-  let infraId = context.getBytes("infraId");
+  let accessControl = parent.accessControl();
+  let accessControlContract = FGOAccessControl.bind(accessControl);
+   entity.uri = data.uri;
 
   let ipfsHash = (entity.uri as string).split("/").pop();
   if (ipfsHash != null) {
@@ -39,19 +60,20 @@ export function handleParentReserved(event: ParentReservedEvent): void {
 
   let fulfillmentWorkflow = new FulfillmentWorkflow(
     Bytes.fromUTF8(
-      event.address.toHexString() + "-" + event.params.designId.toString()
+      event.address.toHexString() + "-" + event.params.designId.toHexString()
     )
   );
 
   fulfillmentWorkflow.parent = entity.id;
-
+  fulfillmentWorkflow.estimatedDeliveryDuration =
+    data.workflow.estimatedDeliveryDuration;
   let physicalSteps: Bytes[] = [];
   for (let i = 0; i < data.workflow.physicalSteps.length; i++) {
     let step = new FulfillmentStep(
       Bytes.fromUTF8(
         event.address.toHexString() +
           "-" +
-          event.params.designId.toString() +
+          event.params.designId.toHexString() +
           "-" +
           i.toString() +
           "-physical"
@@ -59,11 +81,10 @@ export function handleParentReserved(event: ParentReservedEvent): void {
     );
 
     step.workflow = fulfillmentWorkflow.id;
-
+    step.primaryPerformer =  data.workflow.physicalSteps[i].primaryPerformer;
     step.instructions = data.workflow.physicalSteps[i].instructions;
-
     step.fulfiller = Bytes.fromUTF8(
-      infraId.toHexString() +
+      accessControlContract.infraId().toHexString() +
         "-" +
         data.workflow.physicalSteps[i].primaryPerformer.toHexString()
     );
@@ -78,7 +99,7 @@ export function handleParentReserved(event: ParentReservedEvent): void {
         Bytes.fromUTF8(
           event.address.toHexString() +
             "-" +
-            event.params.designId.toString() +
+            event.params.designId.toHexString() +
             "-" +
             i.toString() +
             "-" +
@@ -109,29 +130,5 @@ export function handleParentReserved(event: ParentReservedEvent): void {
   fulfillmentWorkflow.save();
 
   entity.workflow = fulfillmentWorkflow.id;
-
   entity.save();
-}
-
-export function handleParentUpdated(event: ParentUpdatedEvent): void {
-  let entity = Parent.load(
-    Bytes.fromUTF8(
-      event.address.toHexString() + "-" + event.params.designId.toString()
-    )
-  );
-
-  if (entity) {
-    let parent = FGOParent.bind(event.address);
-    let data = parent.getDesignTemplate(entity.designId as BigInt);
-
-    entity.uri = data.uri;
-
-    let ipfsHash = (entity.uri as string).split("/").pop();
-    if (ipfsHash != null) {
-      entity.metadata = ipfsHash;
-      MetadataTemplate.create(ipfsHash);
-    }
-
-    entity.save();
-  }
 }

@@ -8,6 +8,7 @@ contract FGOFuturesLibrary {
         uint256 amount;
         uint256 amountUsedForFutures;
         uint256 depositedAt;
+        uint256 estimatedDeliveryDuration;
         address childContract;
         address originalMarket;
         address depositor;
@@ -23,6 +24,7 @@ contract FGOFuturesLibrary {
         uint256 tokenId;
         uint256 createdAt;
         uint256 settledAt;
+        uint256 futuresSettlementDate;
         address childContract;
         address originalMarket;
         address originalHolder;
@@ -51,7 +53,6 @@ contract FGOFuturesLibrary {
     }
 
     struct SettlementMetrics {
-        uint256 actualCompletionTime;
         uint256 settlementTime;
         uint256 delay;
         uint256 reward;

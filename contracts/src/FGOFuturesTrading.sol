@@ -20,16 +20,17 @@ contract FGOFuturesTrading is ERC1155, ReentrancyGuard {
     address public protocolTreasury;
 
     uint256 public constant BASIS_POINTS = 10000;
-    uint256 private protocolFeeBPS;
-    uint256 private lpFeeBPS;
-    uint256 private orderCount;
+    uint256 private _protocolFeeBPS;
+    uint256 private _lpFeeBPS;
+    uint256 private _orderCount;
 
-    mapping(uint256 => uint256) private totalSupply;
-    mapping(uint256 => bool) private tokenMinted;
-    mapping(uint256 => uint256) private contractIdByToken;
-    mapping(uint256 => FGOFuturesLibrary.SellOrder) private sellOrders;
-    mapping(uint256 => mapping(uint256 => address)) private holderAtBlock;
-    mapping(uint256 => string) private tokenURIs;
+    mapping(uint256 => uint256) private _totalSupply;
+    mapping(uint256 => bool) private _tokenMinted;
+    mapping(uint256 => uint256) private _contractIdByToken;
+    mapping(uint256 => FGOFuturesLibrary.SellOrder) private _sellOrders;
+    mapping(uint256 => mapping(uint256 => address)) private _holderAtBlock;
+    mapping(uint256 => string) private _tokenURIs;
+    mapping(address => mapping(uint256 => uint256)) private _reservedQuantity;
 
     event SellOrderCreated(
         uint256 indexed orderId,
@@ -71,20 +72,27 @@ contract FGOFuturesTrading is ERC1155, ReentrancyGuard {
         address _escrow,
         address _lpTreasury,
         address _protocolTreasury,
-        uint256 _protocolFeeBPS,
-        uint256 _lpFeeBPS
+        uint256 protocolFeeBPS,
+        uint256 lpFeeBPS
     ) ERC1155("") {
         if (_lpTreasury == address(0)) revert FGOFuturesErrors.InvalidAmount();
         if (_protocolTreasury == address(0))
             revert FGOFuturesErrors.InvalidAmount();
+        if (_accessControl == address(0))
+            revert FGOFuturesErrors.InvalidAmount();
+        if (_futuresContract == address(0))
+            revert FGOFuturesErrors.InvalidAmount();
+        if (_escrow == address(0)) revert FGOFuturesErrors.InvalidAmount();
+        if (protocolFeeBPS > 1000) revert FGOFuturesErrors.InvalidAmount();
+        if (lpFeeBPS > 1000) revert FGOFuturesErrors.InvalidAmount();
 
         accessControl = FGOFuturesAccessControl(_accessControl);
         futuresContract = FGOFuturesContract(_futuresContract);
         escrow = FGOFuturesEscrow(_escrow);
         lpTreasury = _lpTreasury;
         protocolTreasury = _protocolTreasury;
-        protocolFeeBPS = _protocolFeeBPS;
-        lpFeeBPS = _lpFeeBPS;
+        _protocolFeeBPS = protocolFeeBPS;
+        _lpFeeBPS = lpFeeBPS;
         symbol = "FGOFT";
         name = "FGOFuturesTrading";
     }
@@ -112,15 +120,18 @@ contract FGOFuturesTrading is ERC1155, ReentrancyGuard {
         uint256 pricePerUnit,
         address seller
     ) internal returns (uint256 orderId) {
-        if (!tokenMinted[tokenId]) revert FGOFuturesErrors.TokenNotMinted();
-        if (balanceOf(seller, tokenId) < quantity)
+        if (!_tokenMinted[tokenId]) revert FGOFuturesErrors.TokenNotMinted();
+        uint256 availableBalance = balanceOf(seller, tokenId) -
+            _reservedQuantity[seller][tokenId];
+        if (availableBalance < quantity)
             revert FGOFuturesErrors.InsufficientBalance();
         if (quantity == 0) revert FGOFuturesErrors.InvalidQuantity();
         if (pricePerUnit == 0) revert FGOFuturesErrors.InvalidPrice();
+        _orderCount++;
+        orderId = _orderCount;
+        _reservedQuantity[seller][tokenId] += quantity;
 
-        orderId = orderCount++;
-
-        sellOrders[orderId] = FGOFuturesLibrary.SellOrder({
+        _sellOrders[orderId] = FGOFuturesLibrary.SellOrder({
             tokenId: tokenId,
             quantity: quantity,
             pricePerUnit: pricePerUnit,
@@ -130,34 +141,28 @@ contract FGOFuturesTrading is ERC1155, ReentrancyGuard {
             isActive: true
         });
 
-        emit SellOrderCreated(
-            orderId,
-            tokenId,
-            quantity,
-            pricePerUnit,
-            seller
-        );
+        emit SellOrderCreated(orderId, tokenId, quantity, pricePerUnit, seller);
     }
 
     function buyFromOrder(
         uint256 orderId,
         uint256 quantityToBuy
     ) external nonReentrant {
-        FGOFuturesLibrary.SellOrder storage order = sellOrders[orderId];
+        FGOFuturesLibrary.SellOrder storage order = _sellOrders[orderId];
 
         if (!order.isActive) revert FGOFuturesErrors.OrderNotActive();
         if (quantityToBuy == 0) revert FGOFuturesErrors.InvalidQuantity();
         if (quantityToBuy > (order.quantity - order.filled))
             revert FGOFuturesErrors.ExceedsAvailable();
 
-        uint256 contractId = contractIdByToken[order.tokenId];
+        uint256 contractId = _contractIdByToken[order.tokenId];
         FGOFuturesLibrary.FuturesContract memory fc = futuresContract
             .getFuturesContract(contractId);
         if (fc.isSettled) revert FGOFuturesErrors.ContractSettled();
 
         uint256 totalPrice = order.pricePerUnit * quantityToBuy;
-        uint256 protocolFee = (totalPrice * protocolFeeBPS) / BASIS_POINTS;
-        uint256 lpFee = (totalPrice * lpFeeBPS) / BASIS_POINTS;
+        uint256 protocolFee = (totalPrice * _protocolFeeBPS) / BASIS_POINTS;
+        uint256 lpFee = (totalPrice * _lpFeeBPS) / BASIS_POINTS;
         uint256 sellerProceeds = totalPrice - protocolFee - lpFee;
 
         address monaToken = accessControl.monaToken();
@@ -186,20 +191,23 @@ contract FGOFuturesTrading is ERC1155, ReentrancyGuard {
         if (order.filled == order.quantity) {
             order.isActive = false;
         }
+        _reservedQuantity[order.seller][order.tokenId] -= quantityToBuy;
 
-        holderAtBlock[order.tokenId][block.number] = msg.sender;
+        _holderAtBlock[order.tokenId][block.number] = msg.sender;
 
         emit SellOrderFilled(orderId, quantityToBuy, totalPrice, msg.sender);
         emit FeesCollected(orderId, protocolFee, lpFee);
     }
 
     function cancelOrder(uint256 orderId) external nonReentrant {
-        FGOFuturesLibrary.SellOrder storage order = sellOrders[orderId];
+        FGOFuturesLibrary.SellOrder storage order = _sellOrders[orderId];
 
         if (order.seller != msg.sender) revert FGOFuturesErrors.NotSeller();
         if (!order.isActive) revert FGOFuturesErrors.OrderNotActive();
 
         order.isActive = false;
+        _reservedQuantity[order.seller][order.tokenId] -= (order.quantity -
+            order.filled);
 
         emit SellOrderCancelled(orderId, msg.sender);
     }
@@ -207,40 +215,47 @@ contract FGOFuturesTrading is ERC1155, ReentrancyGuard {
     function getSellOrder(
         uint256 orderId
     ) external view returns (FGOFuturesLibrary.SellOrder memory) {
-        return sellOrders[orderId];
+        return _sellOrders[orderId];
     }
 
     function getTotalSupply(uint256 tokenId) external view returns (uint256) {
-        return totalSupply[tokenId];
+        return _totalSupply[tokenId];
     }
 
     function isTokenMinted(uint256 tokenId) external view returns (bool) {
-        return tokenMinted[tokenId];
+        return _tokenMinted[tokenId];
     }
 
     function getContractIdByToken(
         uint256 tokenId
     ) external view returns (uint256) {
-        return contractIdByToken[tokenId];
+        return _contractIdByToken[tokenId];
     }
 
     function getHolderAtBlock(
         uint256 tokenId,
         uint256 blockNumber
     ) external view returns (address) {
-        return holderAtBlock[tokenId][blockNumber];
+        return _holderAtBlock[tokenId][blockNumber];
     }
 
     function getOrderCount() public view returns (uint256) {
-        return orderCount;
+        return _orderCount;
     }
 
     function getLpFee() public view returns (uint256) {
-        return lpFeeBPS;
+        return _lpFeeBPS;
     }
 
     function getProtocolFee() public view returns (uint256) {
-        return protocolFeeBPS;
+        return _protocolFeeBPS;
+    }
+
+    function getReservedQuantity(
+        address seller,
+        uint256 tokenId
+    ) public view returns (uint256) {
+        return _reservedQuantity[seller][tokenId];
     }
 
     function setLpTreasury(address _lpTreasury) external onlyAdmin {
@@ -254,14 +269,14 @@ contract FGOFuturesTrading is ERC1155, ReentrancyGuard {
         protocolTreasury = _protocolTreasury;
     }
 
-    function setProtocolFeeBPS(uint256 _protocolFeeBPS) external onlyAdmin {
-        if (_protocolFeeBPS > 1000) revert FGOFuturesErrors.InvalidAmount();
-        protocolFeeBPS = _protocolFeeBPS;
+    function set_protocolFeeBPS(uint256 protocolFeeBPS) external onlyAdmin {
+        if (protocolFeeBPS > 1000) revert FGOFuturesErrors.InvalidAmount();
+        _protocolFeeBPS = protocolFeeBPS;
     }
 
-    function setLpFeeBPS(uint256 _lpFeeBPS) external onlyAdmin {
-        if (_lpFeeBPS > 1000) revert FGOFuturesErrors.InvalidAmount();
-        lpFeeBPS = _lpFeeBPS;
+    function set_lpFeeBPS(uint256 lpFeeBPS) external onlyAdmin {
+        if (lpFeeBPS > 1000) revert FGOFuturesErrors.InvalidAmount();
+        _lpFeeBPS = lpFeeBPS;
     }
 
     function mint(
@@ -272,27 +287,29 @@ contract FGOFuturesTrading is ERC1155, ReentrancyGuard {
     ) external onlyFuturesContract {
         _mint(account, tokenId, amount, "");
 
-        if (!tokenMinted[tokenId]) {
-            tokenMinted[tokenId] = true;
-            contractIdByToken[tokenId] = futuresContract.getContractByToken(
+        if (!_tokenMinted[tokenId]) {
+            _tokenMinted[tokenId] = true;
+            _contractIdByToken[tokenId] = futuresContract.getContractByToken(
                 tokenId
             );
-            tokenURIs[tokenId] = tokenUri;
+            _tokenURIs[tokenId] = tokenUri;
             emit URI(tokenUri, tokenId);
         }
 
-        totalSupply[tokenId] += amount;
-        holderAtBlock[tokenId][block.number] = account;
+        _totalSupply[tokenId] += amount;
+        _holderAtBlock[tokenId][block.number] = account;
     }
 
     function burn(address account, uint256 tokenId, uint256 amount) external {
-        if (msg.sender != address(escrow) && msg.sender != address(futuresContract))
-            revert FGOFuturesErrors.Unauthorized();
+        if (
+            msg.sender != address(escrow) &&
+            msg.sender != address(futuresContract)
+        ) revert FGOFuturesErrors.Unauthorized();
         _burn(account, tokenId, amount);
-        totalSupply[tokenId] -= amount;
+        _totalSupply[tokenId] -= amount;
     }
 
     function uri(uint256 tokenId) public view override returns (string memory) {
-        return tokenURIs[tokenId];
+        return _tokenURIs[tokenId];
     }
 }

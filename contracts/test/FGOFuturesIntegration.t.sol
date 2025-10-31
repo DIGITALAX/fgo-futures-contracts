@@ -60,6 +60,20 @@ contract MockFGOChild is MockERC1155 {
     ) external view returns (bool) {
         return physicalRightsHolders[childId][orderId][to][marketContract];
     }
+
+    function getPhysicalRights(
+        uint256 childId,
+        uint256 orderId,
+        address buyer,
+        address marketContract
+    ) external view returns (FGOLibrary.PhysicalRights memory) {
+        return
+            FGOLibrary.PhysicalRights({
+                guaranteedAmount: 100,
+                estimatedDeliveryDuration: 7 days,
+                purchaseMarket: marketContract
+            });
+    }
 }
 
 contract MockFGOMarket {
@@ -190,6 +204,7 @@ contract FGOFuturesIntegrationTest is Test {
             address(escrow),
             validTokens
         );
+
         trading = new FGOFuturesTrading(
             address(accessControl),
             address(futuresContract),
@@ -258,7 +273,8 @@ contract FGOFuturesIntegrationTest is Test {
         settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
 
-        FGOFuturesLibrary.SettlementBot memory bot = settlement.getSettlementBot(settlementBot1);
+        FGOFuturesLibrary.SettlementBot memory bot = settlement
+            .getSettlementBot(settlementBot1);
         assertEq(bot.botAddress, settlementBot1);
         assertEq(bot.monaStaked, MIN_STAKE);
     }
@@ -314,11 +330,15 @@ contract FGOFuturesIntegrationTest is Test {
             trustedBots,
             ""
         );
+
+        FGOFuturesLibrary.FuturesContract memory fc = futuresContract
+            .getFuturesContract(contractId);
+        uint256 tokenId = fc.tokenId;
         vm.stopPrank();
 
         fulfillmentContract.setFulfillmentStatus(ORDER_ID, 3, 3);
 
-        vm.warp(2000);
+        vm.warp(fc.futuresSettlementDate + 1);
 
         uint256 totalReward = (FUTURES_AMOUNT *
             PRICE_PER_UNIT *
@@ -452,20 +472,13 @@ contract FGOFuturesIntegrationTest is Test {
 
         FGOFuturesLibrary.FuturesContract memory fc = futuresContract
             .getFuturesContract(contractId);
-        uint256 tokenId = fc.tokenId;
-
-        vm.startPrank(rightsHolder);
-        uint256 initialOrderId = trading.createSellOrder(
-            tokenId,
-            FUTURES_AMOUNT,
-            PRICE_PER_UNIT
-        );
-        vm.stopPrank();
 
         vm.startPrank(trader1);
         monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT);
-        trading.buyFromOrder(initialOrderId, FUTURES_AMOUNT);
+        trading.buyFromOrder(1, FUTURES_AMOUNT);
         vm.stopPrank();
+
+        uint256 tokenId = fc.tokenId;
 
         vm.startPrank(trader1);
         uint256 sellOrderId = trading.createSellOrder(
@@ -485,12 +498,14 @@ contract FGOFuturesIntegrationTest is Test {
 
         fulfillmentContract.setFulfillmentStatus(ORDER_ID, 3, 3);
 
-        vm.warp(2000);
+        vm.warp(fc.futuresSettlementDate - 1);
 
         vm.startPrank(settlementBot1);
         vm.expectRevert();
         settlement.settleFuturesContract(contractId);
         vm.stopPrank();
+
+        vm.warp(fc.futuresSettlementDate + 1);
 
         vm.startPrank(rightsHolder);
         monaToken.approve(
@@ -574,13 +589,17 @@ contract FGOFuturesIntegrationTest is Test {
             trustedBots,
             ""
         );
+
+        FGOFuturesLibrary.FuturesContract memory fc = futuresContract
+            .getFuturesContract(contractId);
         vm.stopPrank();
 
         fulfillmentContract.setFulfillmentStatus(ORDER_ID, 3, 3);
 
-        vm.warp(6000);
+        vm.warp(fc.futuresSettlementDate + 3601);
 
-        FGOFuturesLibrary.SettlementBot memory settlementBot = settlement.getSettlementBot(settlementBot1);
+        FGOFuturesLibrary.SettlementBot memory settlementBot = settlement
+            .getSettlementBot(settlementBot1);
 
         vm.startPrank(rightsHolder);
         monaToken.approve(
@@ -593,10 +612,13 @@ contract FGOFuturesIntegrationTest is Test {
         settlement.settleFuturesContract(contractId);
         vm.stopPrank();
 
-        uint256 finalStake = settlement.getSettlementBot(settlementBot1).monaStaked;
+        uint256 finalStake = settlement
+            .getSettlementBot(settlementBot1)
+            .monaStaked;
         assertTrue(finalStake < settlementBot.monaStaked);
 
-        FGOFuturesLibrary.SettlementBot memory bot = settlement.getSettlementBot(settlementBot1);
+        FGOFuturesLibrary.SettlementBot memory bot = settlement
+            .getSettlementBot(settlementBot1);
         assertEq(bot.slashEvents, 1);
     }
 
@@ -735,17 +757,10 @@ contract FGOFuturesIntegrationTest is Test {
             .getFuturesContract(contractId);
         uint256 tokenId = fc.tokenId;
 
-        vm.startPrank(rightsHolder);
-        uint256 initialOrderId = trading.createSellOrder(
-            tokenId,
-            FUTURES_AMOUNT,
-            PRICE_PER_UNIT
-        );
-        vm.stopPrank();
-
+        // Primera orden creada automáticamente al abrir el contrato
         vm.startPrank(trader1);
         monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT);
-        trading.buyFromOrder(initialOrderId, FUTURES_AMOUNT);
+        trading.buyFromOrder(1, FUTURES_AMOUNT);
         vm.stopPrank();
 
         vm.startPrank(rightsHolder);
@@ -860,6 +875,9 @@ contract FGOFuturesIntegrationTest is Test {
             trustedBots,
             ""
         );
+
+        FGOFuturesLibrary.FuturesContract memory fc = futuresContract
+            .getFuturesContract(contractId);
         vm.stopPrank();
 
         fulfillmentContract.setFulfillmentStatus(ORDER_ID, 3, 3);
@@ -876,7 +894,7 @@ contract FGOFuturesIntegrationTest is Test {
         qualifyingNFT.transferFrom(settlementBot3, address(0xdead), 3);
         vm.stopPrank();
 
-        vm.warp(6000);
+        vm.warp(fc.futuresSettlementDate + 3601);
 
         vm.startPrank(rightsHolder);
         settlement.emergencySettleFuturesContract(contractId);
@@ -886,7 +904,9 @@ contract FGOFuturesIntegrationTest is Test {
         assertTrue(futuresContract.getFuturesContract(contractId).isSettled);
     }
 
-    function testEmergencySettlementFailsWhenSettlementBotsCanStillSettle() public {
+    function testEmergencySettlementFailsWhenSettlementBotsCanStillSettle()
+        public
+    {
         vm.startPrank(settlementBot1);
         monaToken.approve(address(settlement), MIN_STAKE);
         settlement.registerSettlementBot(MIN_STAKE);
@@ -935,14 +955,17 @@ contract FGOFuturesIntegrationTest is Test {
             trustedBots,
             ""
         );
+
+        FGOFuturesLibrary.FuturesContract memory fc = futuresContract
+            .getFuturesContract(contractId);
         vm.stopPrank();
 
         fulfillmentContract.setFulfillmentStatus(ORDER_ID, 3, 3);
 
-        vm.warp(6000);
+        vm.warp(fc.futuresSettlementDate + 2000);
 
         vm.startPrank(rightsHolder);
-        vm.expectRevert(FGOFuturesErrors.Unauthorized.selector);
+        vm.expectRevert(FGOFuturesErrors.SettlementNotReady.selector);
         settlement.emergencySettleFuturesContract(contractId);
         vm.stopPrank();
     }
@@ -1000,19 +1023,10 @@ contract FGOFuturesIntegrationTest is Test {
 
         FGOFuturesLibrary.FuturesContract memory fc = futuresContract
             .getFuturesContract(contractId);
-        uint256 tokenId = fc.tokenId;
-
-        vm.startPrank(rightsHolder);
-        uint256 initialOrderId = trading.createSellOrder(
-            tokenId,
-            FUTURES_AMOUNT,
-            PRICE_PER_UNIT
-        );
-        vm.stopPrank();
 
         vm.startPrank(trader1);
         monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT);
-        trading.buyFromOrder(initialOrderId, FUTURES_AMOUNT);
+        trading.buyFromOrder(1, FUTURES_AMOUNT);
         vm.stopPrank();
 
         fulfillmentContract.setFulfillmentStatus(ORDER_ID, 3, 3);
@@ -1029,7 +1043,7 @@ contract FGOFuturesIntegrationTest is Test {
         qualifyingNFT.transferFrom(settlementBot3, address(0xdead), 3);
         vm.stopPrank();
 
-        vm.warp(6000);
+        vm.warp(fc.futuresSettlementDate + 3601);
 
         vm.startPrank(trader1);
         settlement.emergencySettleFuturesContract(contractId);

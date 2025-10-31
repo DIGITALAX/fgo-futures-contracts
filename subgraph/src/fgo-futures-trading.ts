@@ -6,8 +6,7 @@ import {
   SellOrderCreated as SellOrderCreatedEvent,
   SellOrderFilled as SellOrderFilledEvent,
 } from "../generated/FGOFuturesTrading/FGOFuturesTrading";
-import { Order, FuturesContract } from "../generated/schema";
-import { FGOFuturesContract } from "../generated/FGOFuturesContract/FGOFuturesContract";
+import { Order, FuturesContract, Filler } from "../generated/schema";
 
 export function handleFeesCollected(event: FeesCollectedEvent): void {
   let entity = Order.load(
@@ -75,11 +74,40 @@ export function handleSellOrderFilled(event: SellOrderFilledEvent): void {
     Bytes.fromByteArray(ByteArray.fromBigInt(event.params.orderId))
   );
 
+  let trading = FGOFuturesTrading.bind(event.address);
+  let order = trading.getSellOrder(event.params.orderId);
   if (entity) {
-    entity.filled = true;
-    entity.filledPrice = event.params.totalPrice;
-    entity.filledQuantity = event.params.quantity;
-    entity.filler = event.params.buyer;
+    if (entity.quantity.equals(order.filled)) {
+      entity.filled = true;
+      entity.isActive = false;
+    }
+
+    let fillers = entity.fillers;
+    if (!fillers) {
+      fillers = [];
+    }
+
+    let fillerEntity = new Filler(
+      Bytes.fromUTF8(
+        event.params.buyer.toHexString() +
+          event.params.quantity.toHexString() +
+          event.params.totalPrice.toHexString() +
+          entity.orderId.toHexString()
+      )
+    );
+    fillerEntity.order = entity.id;
+    fillerEntity.price = event.params.totalPrice;
+    fillerEntity.quantity = event.params.quantity;
+    fillerEntity.filler = event.params.buyer;
+    fillerEntity.blockNumber = event.block.number;
+    fillerEntity.blockTimestamp = event.block.timestamp;
+    fillerEntity.transactionHash = event.transaction.hash;
+
+    fillerEntity.save();
+
+    fillers.push(fillerEntity.id);
+    entity.fillers = fillers;
+
     entity.save();
   }
 }

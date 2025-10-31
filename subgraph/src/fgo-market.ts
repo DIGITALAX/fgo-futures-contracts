@@ -1,4 +1,4 @@
-import { BigInt, Bytes } from "@graphprotocol/graph-ts";
+import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts";
 import {
   FGOMarket,
   OrderExecuted as OrderExecutedEvent,
@@ -10,6 +10,8 @@ import {
   FulfillmentWorkflow,
   Parent,
 } from "../generated/schema";
+import { FGOParent } from "../generated/templates/FGOParent/FGOParent";
+import { FGOAccessControl } from "../generated/templates/FGOAccessControl/FGOAccessControl";
 
 export function handleOrderExecuted(event: OrderExecutedEvent): void {
   for (let i = 0; i < event.params.orderIds.length; i++) {
@@ -22,7 +24,7 @@ export function handleOrderExecuted(event: OrderExecutedEvent): void {
 
     let entity = new ChildOrder(
       Bytes.fromUTF8(
-        event.address.toHexString() + "-" + currentOrder.toString()
+        event.address.toHexString() + "-" + currentOrder.toHexString()
       )
     );
 
@@ -30,13 +32,13 @@ export function handleOrderExecuted(event: OrderExecutedEvent): void {
     entity.parent = Bytes.fromUTF8(
       data.params.parentContract.toHexString() +
         "-" +
-        data.params.parentId.toString()
+        data.params.parentId.toHexString()
     );
 
     entity.fulfillment = Bytes.fromUTF8(
       market.getFulfillmentContract().toHexString() +
         "-" +
-        currentOrder.toString() +
+        currentOrder.toHexString() +
         data.params.parentContract.toHexString() +
         data.params.parentId.toHexString()
     );
@@ -49,7 +51,7 @@ export function handleOrderExecuted(event: OrderExecutedEvent): void {
         let workflow = FulfillmentWorkflow.load(parent.workflow as Bytes);
         if (workflow) {
           if (workflow.physicalSteps) {
-            let addedToFulfillers = new Set<string>();
+            let addedToFulfillers: string[] = [];
 
             for (
               let i = 0;
@@ -60,34 +62,43 @@ export function handleOrderExecuted(event: OrderExecutedEvent): void {
                 Bytes.fromUTF8(
                   data.params.parentContract.toHexString() +
                     "-" +
-                    data.params.parentId.toString() +
+                    data.params.parentId.toHexString() +
                     "-" +
                     i.toString() +
                     "-physical"
                 )
               );
               if (step && step.fulfiller) {
-                let fulfillerHex = (step.fulfiller as Bytes).toHexString();
-                if (!addedToFulfillers.has(fulfillerHex)) {
-                  addedToFulfillers.add(fulfillerHex);
+                let fulfillerId = step.fulfiller as Bytes;
+                let fulfillerHex = fulfillerId.toHexString();
+                if (addedToFulfillers.indexOf(fulfillerHex) == -1) {
+                  addedToFulfillers.push(fulfillerHex);
 
-                  let fulfiller = Fulfiller.load(step.fulfiller as Bytes);
-                  if (fulfiller) {
-                    let childOrders = fulfiller.childOrders;
-
-                    if (!childOrders) {
-                      childOrders = [];
+                  let fulfiller = Fulfiller.load(fulfillerId);
+                  if (!fulfiller) {
+                    fulfiller = new Fulfiller(fulfillerId);
+                    if (parent.parentContract) {
+                      let parentContractAddress = Address.fromBytes(
+                        parent.parentContract as Bytes
+                      );
+                      let parentContract =
+                        FGOParent.bind(parentContractAddress);
+                      let accessControlContract = FGOAccessControl.bind(
+                        parentContract.accessControl()
+                      );
+                      fulfiller.infraId = accessControlContract.infraId();
                     }
-                    childOrders.push(
-                      Bytes.fromUTF8(
-                        event.address.toHexString() +
-                          "-" +
-                          currentOrder.toString()
-                      )
-                    );
-                    fulfiller.childOrders = childOrders;
-                    fulfiller.save();
                   }
+
+                  let childOrders = fulfiller.childOrders;
+
+                  if (!childOrders) {
+                    childOrders = [];
+                  }
+                  childOrders.push(entity.id);
+
+                  fulfiller.childOrders = childOrders;
+                  fulfiller.save();
                 }
               }
             }

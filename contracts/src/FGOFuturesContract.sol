@@ -6,6 +6,8 @@ import "./FGOFuturesLibrary.sol";
 import "./FGOFuturesAccessControl.sol";
 import "./FGOFuturesEscrow.sol";
 import "./FGOFuturesSettlement.sol";
+import "./FGOFuturesTrading.sol";
+import "./interfaces/IFGOPhysicalRights.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
@@ -19,6 +21,7 @@ contract FGOFuturesContract is ReentrancyGuard {
 
     uint256 public constant MIN_Settlement_REWARD_BPS = 100;
     uint256 public constant MAX_Settlement_REWARD_BPS = 300;
+    uint256 public constant MIN_FUTURES_DURATION = 1 hours;
 
     uint256 private contractCount;
     mapping(uint256 => FGOFuturesLibrary.FuturesContract)
@@ -106,6 +109,75 @@ contract FGOFuturesContract is ReentrancyGuard {
                 msg.sender
             );
 
+        (uint256 tokenId, uint256 futuresSettlementDate) = _validateRights(
+            rights,
+            amount,
+            pricePerUnit,
+            settlementRewardBPS,
+            trustedSettlementBots
+        );
+
+        if (tokenIdToContractId[tokenId] != 0) {
+            contractId = tokenIdToContractId[tokenId];
+            futuresContracts[contractId].quantity += amount;
+            tradingContract.mint(tokenId, amount, msg.sender, "");
+        } else {
+            contractCount++;
+            contractId = contractCount;
+
+            futuresContracts[contractId] = FGOFuturesLibrary.FuturesContract({
+                childId: rights.childId,
+                orderId: rights.orderId,
+                quantity: amount,
+                pricePerUnit: pricePerUnit,
+                settlementRewardBPS: settlementRewardBPS,
+                tokenId: tokenId,
+                createdAt: block.timestamp,
+                settledAt: 0,
+                futuresSettlementDate: futuresSettlementDate,
+                childContract: rights.childContract,
+                originalMarket: rights.originalMarket,
+                originalHolder: msg.sender,
+                isActive: true,
+                isSettled: false,
+                uri: uri,
+                trustedSettlementBots: trustedSettlementBots
+            });
+
+            contractIdToRightsKey[contractId] = rightsKey;
+            tokenIdToContractId[tokenId] = contractId;
+
+            tradingContract.mint(tokenId, amount, msg.sender, uri);
+
+            tradingContract.createSellOrderFromContract(
+                tokenId,
+                amount,
+                pricePerUnit,
+                msg.sender
+            );
+        }
+
+        escrow.markRightsAsUsed(rightsKey, amount);
+
+        emit FuturesContractOpened(
+            contractId,
+            rights.childId,
+            rights.orderId,
+            amount,
+            pricePerUnit,
+            rights.childContract,
+            rights.originalMarket,
+            msg.sender
+        );
+    }
+
+    function _validateRights(
+        FGOFuturesLibrary.EscrowedRights memory rights,
+        uint256 amount,
+        uint256 pricePerUnit,
+        uint256 settlementRewardBPS,
+        address[] memory trustedSettlementBots
+    ) internal view returns (uint256, uint256) {
         if (rights.depositor != msg.sender)
             revert FGOFuturesErrors.NotDepositor();
         if (rights.amount == 0) revert FGOFuturesErrors.NoRightsDeposited();
@@ -115,21 +187,23 @@ contract FGOFuturesContract is ReentrancyGuard {
             revert FGOFuturesErrors.InsufficientEscrowedAmount();
         if (amount == 0) revert FGOFuturesErrors.InvalidAmount();
         if (pricePerUnit == 0) revert FGOFuturesErrors.InvalidPrice();
-        if (trustedSettlementBots.length < 3 || trustedSettlementBots.length > 5)
-            revert FGOFuturesErrors.InvalidSettlementBotCount();
+        if (
+            trustedSettlementBots.length < 3 || trustedSettlementBots.length > 5
+        ) revert FGOFuturesErrors.InvalidSettlementBotCount();
         if (
             settlementRewardBPS < MIN_Settlement_REWARD_BPS ||
             settlementRewardBPS > MAX_Settlement_REWARD_BPS
         ) revert FGOFuturesErrors.InvalidSettlementReward();
 
         for (uint256 i = 0; i < trustedSettlementBots.length; i++) {
-            FGOFuturesLibrary.SettlementBot memory bot = settlementContract.getSettlementBot(
-                trustedSettlementBots[i]
-            );
+            FGOFuturesLibrary.SettlementBot memory bot = settlementContract
+                .getSettlementBot(trustedSettlementBots[i]);
             if (bot.botAddress == address(0)) {
                 revert FGOFuturesErrors.Unauthorized();
             }
-            if (!settlementContract.hasQualifyingNFT(trustedSettlementBots[i])) {
+            if (
+                !settlementContract.hasQualifyingNFT(trustedSettlementBots[i])
+            ) {
                 revert FGOFuturesErrors.SettlementBotLacksQualifyingNFT();
             }
         }
@@ -142,51 +216,18 @@ contract FGOFuturesContract is ReentrancyGuard {
             pricePerUnit
         );
 
-        if (tokenIdToContractId[tokenId] != 0) {
-            contractId = tokenIdToContractId[tokenId];
-            futuresContracts[contractId].quantity += amount;
-            tradingContract.mint(tokenId, amount, msg.sender, "");
-        } else {
-            contractId = contractCount++;
+        FGOMarketLibrary.OrderReceipt memory orderReceipt = IFGOMarket(
+            rights.originalMarket
+        ).getOrderReceipt(rights.orderId);
+        uint256 futuresSettlementDate = orderReceipt.timestamp +
+            rights.estimatedDeliveryDuration;
 
-            futuresContracts[contractId] = FGOFuturesLibrary.FuturesContract({
-                childId: rights.childId,
-                orderId: rights.orderId,
-                quantity: amount,
-                pricePerUnit: pricePerUnit,
-                settlementRewardBPS: settlementRewardBPS,
-                tokenId: tokenId,
-                createdAt: block.timestamp,
-                settledAt: 0,
-                childContract: rights.childContract,
-                originalMarket: rights.originalMarket,
-                originalHolder: msg.sender,
-                isActive: true,
-                isSettled: false,
-                uri: uri,
-                trustedSettlementBots: trustedSettlementBots
-            });
+        if (futuresSettlementDate <= block.timestamp)
+            revert FGOFuturesErrors.SettlementDatePassed();
+        if (futuresSettlementDate - block.timestamp < MIN_FUTURES_DURATION)
+            revert FGOFuturesErrors.InsufficientFuturesDuration();
 
-            contractIdToRightsKey[contractId] = rightsKey;
-            tokenIdToContractId[tokenId] = contractId;
-            
-            tradingContract.mint(tokenId, amount, msg.sender, uri);
-            
-            tradingContract.createSellOrderFromContract(tokenId, amount, pricePerUnit, msg.sender);
-        }
-
-        escrow.markRightsAsUsed(rightsKey, amount);
-
-        emit FuturesContractOpened(
-            contractId,
-            rights.childId,
-            rights.orderId,
-            rights.amount,
-            pricePerUnit,
-            rights.childContract,
-            rights.originalMarket,
-            msg.sender
-        );
+        return (tokenId, futuresSettlementDate);
     }
 
     function _calculateTokenId(
@@ -265,6 +306,7 @@ contract FGOFuturesContract is ReentrancyGuard {
 
         futuresContracts[contractId].isSettled = true;
         futuresContracts[contractId].settledAt = block.timestamp;
+        futuresContracts[contractId].isActive = false;
     }
 
     function cancelFuturesContract(uint256 contractId) external nonReentrant {
@@ -277,7 +319,10 @@ contract FGOFuturesContract is ReentrancyGuard {
         if (!fc.isActive) revert FGOFuturesErrors.ContractNotActive();
         if (fc.isSettled) revert FGOFuturesErrors.AlreadySettled();
 
-        uint256 originalHolderBalance = tradingContract.balanceOf(msg.sender, fc.tokenId);
+        uint256 originalHolderBalance = tradingContract.balanceOf(
+            msg.sender,
+            fc.tokenId
+        );
         if (originalHolderBalance != fc.quantity)
             revert FGOFuturesErrors.TokensAlreadyTraded();
 
@@ -291,7 +336,9 @@ contract FGOFuturesContract is ReentrancyGuard {
         emit FuturesContractCancelled(contractId, msg.sender);
     }
 
-    function setSettlementContract(address _settlementContract) external onlyAdmin {
+    function setSettlementContract(
+        address _settlementContract
+    ) external onlyAdmin {
         settlementContract = FGOFuturesSettlement(_settlementContract);
     }
 
@@ -299,8 +346,9 @@ contract FGOFuturesContract is ReentrancyGuard {
         tradingContract = FGOFuturesTrading(_tradingContract);
     }
 
-    function getContractByToken(uint256 tokenId) external view returns (uint256) {
+    function getContractByToken(
+        uint256 tokenId
+    ) external view returns (uint256) {
         return tokenIdToContractId[tokenId];
     }
-
 }

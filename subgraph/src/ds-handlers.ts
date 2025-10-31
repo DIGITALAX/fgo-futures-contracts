@@ -6,7 +6,11 @@ import {
   json,
   log,
 } from "@graphprotocol/graph-ts";
-import { Metadata, FulfillerMetadata } from "../generated/schema";
+import {
+  Metadata,
+  FulfillerMetadata,
+  SupplierMetadata,
+} from "../generated/schema";
 
 function extractString(
   value: JSONValue | null,
@@ -59,6 +63,37 @@ export function handleFulfillerMetadata(content: Bytes): void {
   if (title) metadata.title = title;
 
   let link = extractString(obj.get("link"), "link");
+  if (link) metadata.link = link;
+
+  metadata.save();
+}
+
+export function handleProfileMetadata(
+  content: Bytes,
+  entityId: string,
+  entityType: string
+): void {
+  const value = json.fromString(content.toString()).toObject();
+  if (!value) {
+    log.error("Failed to parse JSON for {} metadata: {}", [
+      entityType,
+      entityId,
+    ]);
+    return;
+  }
+
+  let metadata = new SupplierMetadata(entityId);
+
+  let image = extractString(value.get("image"), "image");
+  if (image) metadata.image = image;
+
+  let title = extractString(value.get("title"), "title");
+  if (title) metadata.title = title;
+
+  let description = extractString(value.get("description"), "description");
+  if (description) metadata.description = description;
+
+  let link = extractString(value.get("link"), "link");
   if (link) metadata.link = link;
 
   metadata.save();

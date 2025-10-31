@@ -6,9 +6,11 @@ import {
   SettlementBotRegistered as SettlementBotRegisteredEvent,
   SettlementBotSlashed as SettlementBotSlashedEvent,
   StakeWithdrawn as StakeWithdrawnEvent,
+  StakeIncreased as StakeIncreasedEvent,
 } from "../generated/FGOFuturesSettlement/FGOFuturesSettlement";
 import {
   ContractSettled,
+  Filler,
   FuturesContract,
   Order,
   SettlementBot,
@@ -21,7 +23,7 @@ export function handleContractSettled(event: ContractSettledEvent): void {
   );
   entity.contractId = event.params.contractId;
   entity.reward = event.params.reward;
-  entity.actualCompletionTime = event.params.actualCompletionTime;
+  entity.futuresSettlementDate = event.block.timestamp;
   entity.blockNumber = event.block.number;
   entity.settlementBot = Bytes.fromUTF8(
     event.params.settlementBot.toHexString()
@@ -43,29 +45,49 @@ export function handleContractSettled(event: ContractSettledEvent): void {
       ByteArray.fromBigInt(event.params.contractId)
     );
 
-    futureEntity.save();
     let settlement = FGOFuturesSettlement.bind(event.address);
+    futureEntity.maxSettlementDelay = settlement.getMaxSettlementDelay();
+    let fulfillerSettlement = futureEntity.fulfillerSettlement;
+    if (fulfillerSettlement !== null) {
+      futureEntity.timeSinceCompletion = event.block.timestamp.minus(
+        fulfillerSettlement as BigInt
+      );
+    }
+    futureEntity.isSettled = true;
+    futureEntity.isActive = false;
+    futureEntity.settledAt = event.block.timestamp;
+
+    futureEntity.save();
     let trading = FGOFuturesTrading.bind(settlement.trading());
 
-    let orders = futureEntity.orders;
+    let ordersList = futureEntity.orders;
 
-    if (orders) {
+    if (ordersList !== null) {
+      let orders = ordersList as Array<Bytes>;
       let finalFillers: Bytes[] = [];
-      let seenFillers = new Set<string>();
+      let seenFillers = new Array<string>();
 
       for (let i = 0; i < orders.length; i++) {
         let orderEntity = Order.load(orders[i]);
         if (orderEntity) {
-          if (orderEntity.filler) {
-            let balance = trading.balanceOf(
-              orderEntity.filler as Address,
-              orderEntity.tokenId
-            );
-            if (balance.gt(BigInt.fromI32(0))) {
-              let fillerHex = (orderEntity.filler as Bytes).toHexString();
-              if (!seenFillers.has(fillerHex)) {
-                seenFillers.add(fillerHex);
-                finalFillers.push(orderEntity.filler as Bytes);
+          let filledList = orderEntity.fillers;
+          if (filledList) {
+            for (let j = 0; j < filledList.length; j++) {
+              let fillerEntity = Filler.load(filledList[j]);
+              if (fillerEntity && fillerEntity.filler) {
+                let fillerBytes = fillerEntity.filler as Bytes;
+                let fillerAddress = Address.fromBytes(fillerBytes);
+                let balance = trading.balanceOf(
+                  fillerAddress,
+                  orderEntity.tokenId
+                );
+                if (balance.gt(BigInt.fromI32(0))) {
+                  let fillerHex = fillerBytes.toHexString();
+                  if (seenFillers.indexOf(fillerHex) == -1) {
+                    seenFillers.push(fillerHex);
+                    finalFillers.push(fillerBytes);
+                  }
+                }
               }
             }
           }
@@ -152,6 +174,31 @@ export function handleStakeWithdrawn(event: StakeWithdrawnEvent): void {
   }
 }
 
+export function handleStakeIncreased(event: StakeIncreasedEvent): void {
+  let id = Bytes.fromUTF8(event.params.bot.toHexString());
+  let entity = SettlementBot.load(id);
+  let settlement = FGOFuturesSettlement.bind(event.address);
+  let data = settlement.getSettlementBot(event.params.bot);
+
+  if (!entity) {
+    entity = new SettlementBot(id);
+    entity.bot = event.params.bot;
+    entity.totalAmountSlashed = BigInt.fromI32(0);
+    entity.totalSlashEvents = BigInt.fromI32(0);
+    entity.totalSettlements = BigInt.fromI32(0);
+    entity.averageDelaySeconds = BigInt.fromI32(0);
+  }
+
+  entity.stakeAmount = data.monaStaked;
+  entity.totalSettlements = data.totalSettlements;
+  entity.averageDelaySeconds = data.averageDelaySeconds;
+  entity.totalSlashEvents = data.slashEvents;
+  entity.blockNumber = event.block.number;
+  entity.blockTimestamp = event.block.timestamp;
+  entity.transactionHash = event.transaction.hash;
+  entity.save();
+}
+
 export function handleEmergencySettlement(
   event: EmergencySettlementEvent
 ): void {
@@ -160,7 +207,6 @@ export function handleEmergencySettlement(
   );
   entity.contractId = event.params.contractId;
   entity.reward = BigInt.fromI32(0);
-  entity.actualCompletionTime = event.params.settlementTime;
   entity.blockNumber = event.block.number;
   entity.blockTimestamp = event.block.timestamp;
   entity.transactionHash = event.transaction.hash;
@@ -178,30 +224,51 @@ export function handleEmergencySettlement(
       ByteArray.fromBigInt(event.params.contractId)
     );
 
+    let settlement = FGOFuturesSettlement.bind(event.address);
+    futureEntity.maxSettlementDelay = settlement.getMaxSettlementDelay();
+
+    let fulfillerSettlement = futureEntity.fulfillerSettlement;
+    if (fulfillerSettlement !== null) {
+      futureEntity.timeSinceCompletion = event.block.timestamp.minus(
+        fulfillerSettlement as BigInt
+      );
+    }
+    futureEntity.isSettled = true;
+    futureEntity.isActive = false;
+    futureEntity.settledAt = event.block.timestamp;
+
     futureEntity.save();
 
-    let settlement = FGOFuturesSettlement.bind(event.address);
     let trading = FGOFuturesTrading.bind(settlement.trading());
 
-    let orders = futureEntity.orders;
+    let ordersList = futureEntity.orders;
 
-    if (orders) {
+    if (ordersList !== null) {
+      let orders = ordersList as Array<Bytes>;
       let finalFillers: Bytes[] = [];
-      let seenFillers = new Set<string>();
+      let seenFillers = new Array<string>();
 
       for (let i = 0; i < orders.length; i++) {
         let orderEntity = Order.load(orders[i]);
         if (orderEntity) {
-          if (orderEntity.filler) {
-            let balance = trading.balanceOf(
-              orderEntity.filler as Address,
-              orderEntity.tokenId
-            );
-            if (balance.gt(BigInt.fromI32(0))) {
-              let fillerHex = (orderEntity.filler as Bytes).toHexString();
-              if (!seenFillers.has(fillerHex)) {
-                seenFillers.add(fillerHex);
-                finalFillers.push(orderEntity.filler as Bytes);
+          let filledList = orderEntity.fillers;
+          if (filledList) {
+            for (let j = 0; j < filledList.length; j++) {
+              let fillerEntity = Filler.load(filledList[j]);
+              if (fillerEntity && fillerEntity.filler) {
+                let fillerBytes = fillerEntity.filler as Bytes;
+                let fillerAddress = Address.fromBytes(fillerBytes);
+                let balance = trading.balanceOf(
+                  fillerAddress,
+                  orderEntity.tokenId
+                );
+                if (balance.gt(BigInt.fromI32(0))) {
+                  let fillerHex = fillerBytes.toHexString();
+                  if (seenFillers.indexOf(fillerHex) == -1) {
+                    seenFillers.push(fillerHex);
+                    finalFillers.push(fillerBytes);
+                  }
+                }
               }
             }
           }

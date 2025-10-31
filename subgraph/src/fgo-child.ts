@@ -1,4 +1,10 @@
-import { Bytes, dataSource, store } from "@graphprotocol/graph-ts";
+import {
+  Address,
+  BigInt,
+  Bytes,
+  dataSource,
+  store,
+} from "@graphprotocol/graph-ts";
 import {
   ChildCreated as ChildCreatedEvent,
   ChildDeleted as ChildDeletedEvent,
@@ -12,7 +18,7 @@ import { FGOMarket } from "../generated/templates/FGOMarket/FGOMarket";
 
 export function handleChildCreated(event: ChildCreatedEvent): void {
   let entityId = Bytes.fromUTF8(
-    event.address.toHexString() + "-" + event.params.childId.toString()
+    event.address.toHexString() + "-" + event.params.childId.toHexString()
   );
   let entity = new Child(entityId);
   let child = FGOChild.bind(event.address);
@@ -42,7 +48,7 @@ export function handleChildCreated(event: ChildCreatedEvent): void {
 export function handleChildDeleted(event: ChildDeletedEvent): void {
   let entity = Child.load(
     Bytes.fromUTF8(
-      event.address.toHexString() + "-" + event.params.childId.toString()
+      event.address.toHexString() + "-" + event.params.childId.toHexString()
     )
   );
 
@@ -54,7 +60,7 @@ export function handleChildDeleted(event: ChildDeletedEvent): void {
 export function handleChildMinted(event: ChildMintedEvent): void {
   let entity = Child.load(
     Bytes.fromUTF8(
-      event.address.toHexString() + "-" + event.params.childId.toString()
+      event.address.toHexString() + "-" + event.params.childId.toHexString()
     )
   );
 
@@ -64,6 +70,8 @@ export function handleChildMinted(event: ChildMintedEvent): void {
         Bytes.fromUTF8(
           event.params.childId.toHexString() +
             "-" +
+            event.address.toHexString() +
+            "-" +
             event.params.orderId.toHexString() +
             "-" +
             event.params.to.toHexString() +
@@ -71,10 +79,21 @@ export function handleChildMinted(event: ChildMintedEvent): void {
             event.params.market.toHexString()
         )
       );
+      let childContract = FGOChild.bind(event.address);
+
+      let rights = childContract.getPhysicalRights(
+        event.params.childId,
+        event.params.orderId,
+        event.params.to,
+        event.params.market
+      );
+
       if (!physicalRights) {
         physicalRights = new PhysicalRights(
           Bytes.fromUTF8(
             event.params.childId.toHexString() +
+              "-" +
+              event.address.toHexString() +
               "-" +
               event.params.orderId.toHexString() +
               "-" +
@@ -83,8 +102,13 @@ export function handleChildMinted(event: ChildMintedEvent): void {
               event.params.market.toHexString()
           )
         );
+
         physicalRights.childId = event.params.childId;
+        physicalRights.blockTimestamp = event.block.timestamp;
         physicalRights.orderId = event.params.orderId;
+        physicalRights.estimatedDeliveryDuration =
+          rights.estimatedDeliveryDuration;
+        physicalRights.holder = event.params.to;
         physicalRights.buyer = event.params.to;
         physicalRights.child = entity.id;
         physicalRights.guaranteedAmount = event.params.amount;
@@ -93,12 +117,10 @@ export function handleChildMinted(event: ChildMintedEvent): void {
         physicalRights.order = Bytes.fromUTF8(
           event.params.market.toHexString() +
             "-" +
-            event.params.orderId.toString()
+            event.params.orderId.toHexString()
         );
       } else {
-        physicalRights.guaranteedAmount = physicalRights.guaranteedAmount.plus(
-          event.params.amount
-        );
+        physicalRights.guaranteedAmount = rights.guaranteedAmount;
       }
       physicalRights.save();
     }
@@ -114,6 +136,8 @@ export function handlePhysicalRightsTransferred(
     Bytes.fromUTF8(
       event.params.childId.toHexString() +
         "-" +
+        event.address.toHexString() +
+        "-" +
         event.params.orderId.toHexString() +
         "-" +
         event.params.sender.toHexString() +
@@ -122,13 +146,19 @@ export function handlePhysicalRightsTransferred(
     )
   );
 
+  let childContract = FGOChild.bind(event.address);
   if (senderRights) {
-    if (senderRights.guaranteedAmount.equals(event.params.amount)) {
-      store.remove("PhysicalRights", senderRights.id.toString());
+    senderRights.receiver = event.params.receiver;
+    let senderAmount = childContract.getPhysicalRights(
+      event.params.childId,
+      event.params.orderId,
+      event.params.sender,
+      event.params.market
+    );
+    if (senderAmount.guaranteedAmount.equals(BigInt.fromI32(0))) {
+      store.remove("PhysicalRights", senderRights.id.toHexString());
     } else {
-      senderRights.guaranteedAmount = senderRights.guaranteedAmount.minus(
-        event.params.amount
-      );
+      senderRights.guaranteedAmount = senderAmount.guaranteedAmount;
       senderRights.save();
     }
   }
@@ -136,6 +166,8 @@ export function handlePhysicalRightsTransferred(
   let receiverRights = PhysicalRights.load(
     Bytes.fromUTF8(
       event.params.childId.toHexString() +
+        "-" +
+        event.address.toHexString() +
         "-" +
         event.params.orderId.toHexString() +
         "-" +
@@ -145,10 +177,19 @@ export function handlePhysicalRightsTransferred(
     )
   );
 
+  let rights = childContract.getPhysicalRights(
+    event.params.childId,
+    event.params.orderId,
+    event.params.receiver,
+    event.params.market
+  );
+
   if (!receiverRights) {
     receiverRights = new PhysicalRights(
       Bytes.fromUTF8(
         event.params.childId.toHexString() +
+          "-" +
+          event.address.toHexString() +
           "-" +
           event.params.orderId.toHexString() +
           "-" +
@@ -157,27 +198,29 @@ export function handlePhysicalRightsTransferred(
           event.params.market.toHexString()
       )
     );
+
     receiverRights.childId = event.params.childId;
     receiverRights.orderId = event.params.orderId;
+    receiverRights.estimatedDeliveryDuration = rights.estimatedDeliveryDuration;
     receiverRights.buyer = event.params.sender;
     let market = FGOMarket.bind(event.params.market);
     receiverRights.originalBuyer = market.getOrderReceipt(
       event.params.orderId
     ).buyer;
-
+    receiverRights.blockTimestamp = event.block.timestamp;
     receiverRights.holder = event.params.receiver;
     receiverRights.guaranteedAmount = event.params.amount;
     receiverRights.purchaseMarket = event.params.market;
     receiverRights.order = Bytes.fromUTF8(
-      event.params.market.toHexString() + "-" + event.params.orderId.toString()
+      event.params.market.toHexString() +
+        "-" +
+        event.params.orderId.toHexString()
     );
     receiverRights.child = Bytes.fromUTF8(
-      event.address.toHexString() + "-" + event.params.childId.toString()
+      event.address.toHexString() + "-" + event.params.childId.toHexString()
     );
   } else {
-    receiverRights.guaranteedAmount = receiverRights.guaranteedAmount.plus(
-      event.params.amount
-    );
+    receiverRights.guaranteedAmount = rights.guaranteedAmount;
   }
 
   receiverRights.save();
