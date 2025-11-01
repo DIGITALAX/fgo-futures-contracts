@@ -1,4 +1,4 @@
-import { BigInt, ByteArray, Bytes, store } from "@graphprotocol/graph-ts";
+import { BigInt, ByteArray, Bytes } from "@graphprotocol/graph-ts";
 import {
   FuturesContractOpened as FuturesContractOpenedEvent,
   FuturesContractCancelled as FuturesContractCancelledEvent,
@@ -8,38 +8,47 @@ import {
   Child,
   EscrowedRight,
   FuturesContract,
-  OrderToContract,
+  Order,
 } from "../generated/schema";
 import { Metadata as MetadataTemplate } from "../generated/templates";
 
 export function handleFuturesContractOpened(
   event: FuturesContractOpenedEvent
 ): void {
-  let entity = new FuturesContract(
-    Bytes.fromByteArray(ByteArray.fromBigInt(event.params.contractId))
+  let futuresId = Bytes.fromByteArray(
+    ByteArray.fromBigInt(event.params.contractId)
   );
 
   let futures = FGOFuturesContract.bind(event.address);
   let data = futures.getFuturesContract(event.params.contractId);
+  let entity = FuturesContract.load(futuresId);
+  if (!entity) {
+    entity = new FuturesContract(futuresId);
+  }
 
   entity.contractId = event.params.contractId;
+  entity.marketOrderId = event.params.orderId;
   entity.childId = event.params.childId;
-  entity.orderId = event.params.orderId;
-  entity.quantity = event.params.quantity;
+  entity.isActive = data.isActive;
+  entity.isSettled = data.isSettled;
+  entity.blockNumber = event.block.number;
+  entity.blockTimestamp = event.block.timestamp;
+  entity.transactionHash = event.transaction.hash;
   entity.pricePerUnit = event.params.pricePerUnit;
   entity.childContract = event.params.childContract;
   entity.originalMarket = event.params.originalMarket;
   entity.originalHolder = event.params.originalHolder;
-  entity.futuresSettlementDate = data.futuresSettlementDate;
   entity.escrowed = futures.getContractIdToRightsKey(event.params.contractId);
+  entity.tokenId = data.tokenId;
+  entity.quantity = data.quantity;
 
-  entity.blockNumber = event.block.number;
-  entity.blockTimestamp = event.block.timestamp;
-  entity.transactionHash = event.transaction.hash;
+  entity.futuresSettlementDate = data.futuresSettlementDate;
 
   let childEntity = Child.load(
     Bytes.fromUTF8(
-      entity.childContract.toHexString() + "-" + entity.childId.toHexString()
+      (entity.childContract as Bytes).toHexString() +
+        "-" +
+        (entity.childId as BigInt).toHexString()
     )
   );
 
@@ -68,25 +77,6 @@ export function handleFuturesContractOpened(
   }
   entity.trustedSettlementBots = settlementData;
 
-  let orderLookup = new OrderToContract(
-    Bytes.fromUTF8(
-      event.params.childContract.toHexString() +
-        "-" +
-        event.params.childId.toHexString() +
-        "-" +
-        event.params.orderId.toHexString() +
-        "-" +
-        event.params.originalMarket.toHexString()
-    )
-  );
-  orderLookup.contractId = event.params.contractId;
-  orderLookup.childId = event.params.childId;
-  orderLookup.orderId = event.params.orderId;
-  orderLookup.childContract = event.params.childContract;
-  orderLookup.originalMarket = event.params.originalMarket;
-  orderLookup.futuresContract = event.address as Bytes;
-  orderLookup.save();
-
   entity.save();
 
   let rightsKey = futures.getContractIdToRightsKey(event.params.contractId);
@@ -96,6 +86,12 @@ export function handleFuturesContractOpened(
   if (entityEscrow) {
     entityEscrow.amountUsedForFutures = event.params.quantity;
     entityEscrow.futuresCreated = true;
+    let contracts = entityEscrow.contracts;
+    if (!contracts) {
+      contracts = [];
+    }
+    contracts.push(entity.id);
+    entityEscrow.contracts = contracts;
     entityEscrow.save();
   }
 }
@@ -108,15 +104,18 @@ export function handleFuturesContractCancelled(
   );
 
   if (entity) {
-    let orderLookupId = Bytes.fromUTF8(
-      entity.childContract.toHexString() +
-        "-" +
-        entity.childId.toHexString() +
-        "-" +
-        entity.orderId.toHexString() +
-        "-" +
-        entity.originalMarket.toHexString()
-    );
+    entity.isActive = false;
+    entity.save();
+
+    if (entity.orders) {
+      for (let i = 0; i < (entity.orders as Bytes[]).length; i++) {
+        let order = Order.load((entity.orders as Bytes[])[i]);
+        if (order) {
+          order.isActive = false;
+          order.save();
+        }
+      }
+    }
 
     if (entity.escrowed) {
       let escrow = EscrowedRight.load(entity.escrowed as Bytes);
@@ -126,9 +125,5 @@ export function handleFuturesContractCancelled(
         escrow.save();
       }
     }
-
-    store.remove("Order", entity.id.toHexString());
-    store.remove("OrderToContract", orderLookupId.toHexString());
-    store.remove("FuturesContract", entity.id.toHexString());
   }
 }

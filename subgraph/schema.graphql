@@ -1,24 +1,25 @@
 type FuturesContract @entity {
   id: Bytes!
-  contractId: BigInt! # uint256
-  childId: BigInt! # uint256
-  orderId: BigInt! # uint256
-  quantity: BigInt! # uint256
-  pricePerUnit: BigInt! # uint256
-  childContract: Bytes! # address
-  originalMarket: Bytes! # address
-  originalHolder: Bytes! # address
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-  uri: String!
+  contractId: BigInt # uint256
+  childId: BigInt # uint256
+  marketOrderId: BigInt
+  tokenId: BigInt # uint256
+  quantity: BigInt # uint256
+  pricePerUnit: BigInt # uint256
+  childContract: Bytes # address
+  originalMarket: Bytes # address
+  originalHolder: Bytes # address
+  blockNumber: BigInt
+  blockTimestamp: BigInt
+  transactionHash: Bytes
+  uri: String
   child: Child
-  createdAt: BigInt!
-  settledAt: BigInt!
-  futuresSettlementDate: BigInt!
-  settlementRewardBPS: BigInt!
-  isActive: Boolean!
-  isSettled: Boolean!
+  createdAt: BigInt
+  settledAt: BigInt
+  futuresSettlementDate: BigInt
+  settlementRewardBPS: BigInt
+  isActive: Boolean
+  isSettled: Boolean
   trustedSettlementBots: [Bytes!]
   orders: [Order!]
   childrenClaimed: [ChildClaimed!]
@@ -28,16 +29,6 @@ type FuturesContract @entity {
   timeSinceCompletion: BigInt
   settledContract: ContractSettled
   fulfillerSettlement: BigInt
-}
-
-type OrderToContract @entity {
-  id: Bytes!
-  contractId: BigInt!
-  childId: BigInt!
-  orderId: BigInt!
-  childContract: Bytes!
-  originalMarket: Bytes!
-  futuresContract: Bytes!
 }
 
 type Child @entity {
@@ -126,7 +117,6 @@ type EscrowedRight @entity {
 type Order @entity {
   id: Bytes!
   orderId: BigInt! # uint256
-  tokenId: BigInt! # uint256
   quantity: BigInt! # uint256
   pricePerUnit: BigInt! # uint256
   seller: Bytes! # address
@@ -258,5 +248,3 @@ type SupplierMetadata @entity {
   description: String
   link: String
 }
-
-

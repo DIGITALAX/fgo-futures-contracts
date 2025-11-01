@@ -121,6 +121,7 @@ contract FGOFuturesContract is ReentrancyGuard {
             contractId = tokenIdToContractId[tokenId];
             futuresContracts[contractId].quantity += amount;
             tradingContract.mint(tokenId, amount, msg.sender, "");
+            tradingContract.updateSellOrderQuantity(tokenId, amount);
         } else {
             contractCount++;
             contractId = contractCount;
@@ -149,12 +150,13 @@ contract FGOFuturesContract is ReentrancyGuard {
 
             tradingContract.mint(tokenId, amount, msg.sender, uri);
 
-            tradingContract.createSellOrderFromContract(
+            uint256 sellOrderId = tradingContract.createSellOrderFromContract(
                 tokenId,
                 amount,
                 pricePerUnit,
                 msg.sender
             );
+            tradingContract.setInitialSellOrderId(tokenId, sellOrderId);
         }
 
         escrow.markRightsAsUsed(rightsKey, amount);
@@ -208,14 +210,6 @@ contract FGOFuturesContract is ReentrancyGuard {
             }
         }
 
-        uint256 tokenId = _calculateTokenId(
-            rights.childId,
-            rights.orderId,
-            rights.childContract,
-            rights.originalMarket,
-            pricePerUnit
-        );
-
         FGOMarketLibrary.OrderReceipt memory orderReceipt = IFGOMarket(
             rights.originalMarket
         ).getOrderReceipt(rights.orderId);
@@ -226,6 +220,14 @@ contract FGOFuturesContract is ReentrancyGuard {
             revert FGOFuturesErrors.SettlementDatePassed();
         if (futuresSettlementDate - block.timestamp < MIN_FUTURES_DURATION)
             revert FGOFuturesErrors.InsufficientFuturesDuration();
+
+        uint256 tokenId = _calculateTokenId(
+            rights.childId,
+            rights.orderId,
+            rights.childContract,
+            rights.originalMarket,
+            pricePerUnit
+        );
 
         return (tokenId, futuresSettlementDate);
     }

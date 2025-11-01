@@ -29,9 +29,11 @@ contract FGOFuturesErrors {
     error AlreadyStaked();
     error NoStakeToWithdraw();
     error NotSettled();
+    error CannotCancelInitialFuturesOrder();
     error AlreadyRegistered();
     error InsufficientStake();
     error TokensAlreadyTraded();
     error SettlementDatePassed();
     error InsufficientFuturesDuration();
+    error InsufficientSettlementFunds();
 }

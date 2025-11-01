@@ -79,7 +79,7 @@ export function handleContractSettled(event: ContractSettledEvent): void {
                 let fillerAddress = Address.fromBytes(fillerBytes);
                 let balance = trading.balanceOf(
                   fillerAddress,
-                  orderEntity.tokenId
+                  futureEntity.tokenId as BigInt
                 );
                 if (balance.gt(BigInt.fromI32(0))) {
                   let fillerHex = fillerBytes.toHexString();
@@ -260,7 +260,7 @@ export function handleEmergencySettlement(
                 let fillerAddress = Address.fromBytes(fillerBytes);
                 let balance = trading.balanceOf(
                   fillerAddress,
-                  orderEntity.tokenId
+                  futureEntity.tokenId as BigInt
                 );
                 if (balance.gt(BigInt.fromI32(0))) {
                   let fillerHex = fillerBytes.toHexString();

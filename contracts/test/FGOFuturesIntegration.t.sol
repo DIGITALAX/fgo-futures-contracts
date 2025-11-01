@@ -228,6 +228,7 @@ contract FGOFuturesIntegrationTest is Test {
         escrow.setTradingContract(address(trading));
         futuresContract.setSettlementContract(address(settlement));
         futuresContract.setTradingContract(address(trading));
+        trading.setSettlementContract(address(settlement));
 
         monaToken.mint(rightsHolder, 1000000 * 10 ** 18);
         monaToken.mint(settlementBot1, 1000000 * 10 ** 18);
@@ -244,6 +245,41 @@ contract FGOFuturesIntegrationTest is Test {
 
         childContract.mint(address(escrow), CHILD_ID, 1000);
 
+        vm.stopPrank();
+    }
+
+    function _setupFuturesWithEscrow() internal {
+        vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            ESCROW_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
+        escrow.depositPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            ESCROW_AMOUNT,
+            address(marketContract),
+            address(childContract)
+        );
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot1);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot2);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot3);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
         vm.stopPrank();
     }
 
@@ -336,17 +372,14 @@ contract FGOFuturesIntegrationTest is Test {
         uint256 tokenId = fc.tokenId;
         vm.stopPrank();
 
+        vm.startPrank(trader1);
+        monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT);
+        trading.buyFromOrder(1, FUTURES_AMOUNT);
+        vm.stopPrank();
+
         fulfillmentContract.setFulfillmentStatus(ORDER_ID, 3, 3);
 
         vm.warp(fc.futuresSettlementDate + 1);
-
-        uint256 totalReward = (FUTURES_AMOUNT *
-            PRICE_PER_UNIT *
-            Settlement_REWARD_BPS) / 10000;
-
-        vm.startPrank(rightsHolder);
-        monaToken.approve(address(settlement), totalReward);
-        vm.stopPrank();
 
         vm.startPrank(settlementBot1);
         settlement.settleFuturesContract(contractId);
@@ -474,7 +507,9 @@ contract FGOFuturesIntegrationTest is Test {
             .getFuturesContract(contractId);
 
         vm.startPrank(trader1);
-        monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT);
+        uint256 totalCostPrimary = FUTURES_AMOUNT * PRICE_PER_UNIT;
+        uint256 settlementFeePrimary = (totalCostPrimary * Settlement_REWARD_BPS) / 10000;
+        monaToken.approve(address(trading), totalCostPrimary + settlementFeePrimary);
         trading.buyFromOrder(1, FUTURES_AMOUNT);
         vm.stopPrank();
 
@@ -594,19 +629,17 @@ contract FGOFuturesIntegrationTest is Test {
             .getFuturesContract(contractId);
         vm.stopPrank();
 
+        vm.startPrank(trader1);
+        monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT);
+        trading.buyFromOrder(1, FUTURES_AMOUNT);
+        vm.stopPrank();
+
         fulfillmentContract.setFulfillmentStatus(ORDER_ID, 3, 3);
 
         vm.warp(fc.futuresSettlementDate + 3601);
 
         FGOFuturesLibrary.SettlementBot memory settlementBot = settlement
             .getSettlementBot(settlementBot1);
-
-        vm.startPrank(rightsHolder);
-        monaToken.approve(
-            address(settlement),
-            (FUTURES_AMOUNT * PRICE_PER_UNIT * Settlement_REWARD_BPS) / 10000
-        );
-        vm.stopPrank();
 
         vm.startPrank(settlementBot1);
         settlement.settleFuturesContract(contractId);
@@ -1051,5 +1084,367 @@ contract FGOFuturesIntegrationTest is Test {
 
         assertTrue(settlement.isContractSettled(contractId));
         assertTrue(futuresContract.getFuturesContract(contractId).isSettled);
+    }
+
+    function testSettlementRewardPoolCollection() public {
+        _setupFuturesWithEscrow();
+
+        address[] memory trustedBots = new address[](3);
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
+
+        vm.startPrank(rightsHolder);
+        uint256 contractId = futuresContract.openFuturesContract(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            PRICE_PER_UNIT,
+            Settlement_REWARD_BPS,
+            address(childContract),
+            address(marketContract),
+            trustedBots,
+            ""
+        );
+        vm.stopPrank();
+
+        uint256 poolBefore = settlement.getSettlementRewardPool(contractId);
+        assertEq(poolBefore, 0, "Pool should start empty");
+
+        vm.startPrank(trader1);
+        monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT * 2);
+        trading.buyFromOrder(1, FUTURES_AMOUNT);
+        vm.stopPrank();
+
+        uint256 expectedFee = (FUTURES_AMOUNT * PRICE_PER_UNIT * Settlement_REWARD_BPS) / 10000;
+        uint256 poolAfter = settlement.getSettlementRewardPool(contractId);
+
+        assertEq(poolAfter, expectedFee, "Pool should equal settlement fee collected");
+        assertGt(poolAfter, 0, "Pool should be funded");
+    }
+
+    function testTokenBalancesChecksDuringBuySell() public {
+        _setupFuturesWithEscrow();
+
+        address[] memory trustedBots = new address[](3);
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
+
+        vm.startPrank(rightsHolder);
+        uint256 contractId = futuresContract.openFuturesContract(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            PRICE_PER_UNIT,
+            Settlement_REWARD_BPS,
+            address(childContract),
+            address(marketContract),
+            trustedBots,
+            ""
+        );
+        vm.stopPrank();
+
+        uint256 tokenId = trading.getTotalSupply(1) > 0
+            ? uint256(keccak256(abi.encodePacked(address(childContract), CHILD_ID, ORDER_ID, address(marketContract), PRICE_PER_UNIT)))
+            : 0;
+
+        uint256 balanceBefore = trading.balanceOf(admin, tokenId);
+
+        vm.startPrank(trader1);
+        uint256 trader1BalanceBefore = monaToken.balanceOf(trader1);
+        monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT * 2);
+        trading.buyFromOrder(1, FUTURES_AMOUNT);
+        uint256 trader1BalanceAfter = monaToken.balanceOf(trader1);
+        vm.stopPrank();
+
+        uint256 totalCost = FUTURES_AMOUNT * PRICE_PER_UNIT;
+        uint256 expectedDeduction = totalCost;
+
+        assertLt(trader1BalanceAfter, trader1BalanceBefore, "Trader balance should decrease");
+        assertEq(
+            trader1BalanceBefore - trader1BalanceAfter,
+            expectedDeduction,
+            "Trader should pay total price (settlement fee deducted from it)"
+        );
+    }
+
+    function testRandomTransferWithSynchronization() public {
+        _setupFuturesWithEscrow();
+
+        address[] memory trustedBots = new address[](3);
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
+
+        vm.startPrank(rightsHolder);
+        uint256 contractId = futuresContract.openFuturesContract(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            PRICE_PER_UNIT,
+            Settlement_REWARD_BPS,
+            address(childContract),
+            address(marketContract),
+            trustedBots,
+            ""
+        );
+        vm.stopPrank();
+
+        uint256 tokenId = uint256(keccak256(abi.encodePacked(address(childContract), CHILD_ID, ORDER_ID, address(marketContract), PRICE_PER_UNIT)));
+
+        vm.startPrank(trader1);
+        monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT * 2);
+        trading.buyFromOrder(1, FUTURES_AMOUNT);
+
+        uint256 trader1Balance = trading.balanceOf(trader1, tokenId);
+        assertEq(trader1Balance, FUTURES_AMOUNT, "Trader1 should have bought amount");
+
+        trading.setApprovalForAll(address(trading), true);
+        uint256 transferAmount = FUTURES_AMOUNT / 2;
+        trading.safeTransferFrom(trader1, trader2, tokenId, transferAmount, "");
+
+        uint256 trader1BalanceAfter = trading.balanceOf(trader1, tokenId);
+        uint256 trader2BalanceAfter = trading.balanceOf(trader2, tokenId);
+
+        assertEq(trader1BalanceAfter, FUTURES_AMOUNT - transferAmount, "Trader1 balance should decrease");
+        assertEq(trader2BalanceAfter, transferAmount, "Trader2 should receive tokens");
+        assertEq(trader1BalanceAfter + trader2BalanceAfter, FUTURES_AMOUNT, "Total tokens should be preserved");
+
+        vm.stopPrank();
+    }
+
+    function testTransferBlockedIfReservedTokens() public {
+        _setupFuturesWithEscrow();
+
+        address[] memory trustedBots = new address[](3);
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
+
+        vm.startPrank(rightsHolder);
+        uint256 contractId = futuresContract.openFuturesContract(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            PRICE_PER_UNIT,
+            Settlement_REWARD_BPS,
+            address(childContract),
+            address(marketContract),
+            trustedBots,
+            ""
+        );
+        vm.stopPrank();
+
+        uint256 tokenId = uint256(keccak256(abi.encodePacked(address(childContract), CHILD_ID, ORDER_ID, address(marketContract), PRICE_PER_UNIT)));
+
+        vm.startPrank(trader1);
+        monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT * 2);
+        trading.buyFromOrder(1, FUTURES_AMOUNT);
+
+        trading.setApprovalForAll(address(trading), true);
+        trading.createSellOrder(tokenId, FUTURES_AMOUNT, PRICE_PER_UNIT / 2);
+
+        uint256 reserved = trading.getReservedQuantity(trader1, tokenId);
+        assertEq(reserved, FUTURES_AMOUNT, "All tokens should be reserved in order");
+
+        vm.expectRevert(FGOFuturesErrors.InsufficientBalance.selector);
+        trading.safeTransferFrom(trader1, trader2, tokenId, 1, "");
+
+        vm.stopPrank();
+    }
+
+    function testComprehensiveFlowWithFeeTracking() public {
+        _setupFuturesWithEscrow();
+
+        address[] memory trustedBots = new address[](3);
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
+
+        vm.startPrank(rightsHolder);
+        uint256 contractId = futuresContract.openFuturesContract(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT,
+            PRICE_PER_UNIT,
+            Settlement_REWARD_BPS,
+            address(childContract),
+            address(marketContract),
+            trustedBots,
+            ""
+        );
+        vm.stopPrank();
+
+        uint256 tokenId = uint256(keccak256(abi.encodePacked(address(childContract), CHILD_ID, ORDER_ID, address(marketContract), PRICE_PER_UNIT)));
+
+        uint256 protocolFeeBPS = trading.getProtocolFee();
+        uint256 lpFeeBPS = trading.getLpFee();
+
+        uint256 primaryBuyAmount1 = 20;
+        uint256 primaryBuyAmount2 = 15;
+        uint256 primaryBuyAmount3 = 15;
+
+        uint256 protocolTreasuryBefore = monaToken.balanceOf(protocolTreasury);
+        uint256 lpTreasuryBefore = monaToken.balanceOf(lpTreasury);
+        uint256 settlementPoolBefore = settlement.getSettlementRewardPool(contractId);
+
+        vm.startPrank(trader1);
+        monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT * 2);
+        trading.buyFromOrder(1, primaryBuyAmount1);
+        vm.stopPrank();
+
+        address trader3 = address(0x10);
+        address trader4 = address(0x11);
+        monaToken.mint(trader3, 1000000 * 10 ** 18);
+        monaToken.mint(trader4, 1000000 * 10 ** 18);
+
+        vm.startPrank(trader3);
+        monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT * 2);
+        trading.buyFromOrder(1, primaryBuyAmount2);
+        vm.stopPrank();
+
+        vm.startPrank(trader4);
+        monaToken.approve(address(trading), FUTURES_AMOUNT * PRICE_PER_UNIT * 2);
+        trading.buyFromOrder(1, primaryBuyAmount3);
+        vm.stopPrank();
+
+        uint256 protocolTreasuryAfterPrimary = monaToken.balanceOf(protocolTreasury);
+        uint256 lpTreasuryAfterPrimary = monaToken.balanceOf(lpTreasury);
+        uint256 settlementPoolAfterPrimary = settlement.getSettlementRewardPool(contractId);
+
+        uint256 totalPrimaryPrice = (primaryBuyAmount1 + primaryBuyAmount2 + primaryBuyAmount3) * PRICE_PER_UNIT;
+        uint256 expectedSettlementFeePrimary = (totalPrimaryPrice * Settlement_REWARD_BPS) / 10000;
+        uint256 remainingPrimary = totalPrimaryPrice - expectedSettlementFeePrimary;
+        uint256 expectedProtocolFeePrimary = (remainingPrimary * protocolFeeBPS) / 10000;
+        uint256 expectedLpFeePrimary = (remainingPrimary * lpFeeBPS) / 10000;
+
+        assertEq(
+            protocolTreasuryAfterPrimary - protocolTreasuryBefore,
+            expectedProtocolFeePrimary,
+            "Protocol treasury should receive correct fee after primary"
+        );
+        assertEq(
+            lpTreasuryAfterPrimary - lpTreasuryBefore,
+            expectedLpFeePrimary,
+            "LP treasury should receive correct fee after primary"
+        );
+        assertEq(
+            settlementPoolAfterPrimary - settlementPoolBefore,
+            expectedSettlementFeePrimary,
+            "Settlement pool should be funded after primary"
+        );
+
+        uint256 trader1TokensAfterPrimary = trading.balanceOf(trader1, tokenId);
+        uint256 trader3TokensAfterPrimary = trading.balanceOf(trader3, tokenId);
+        uint256 trader4TokensAfterPrimary = trading.balanceOf(trader4, tokenId);
+
+        assertEq(trader1TokensAfterPrimary, primaryBuyAmount1, "Trader1 should have primary amount");
+        assertEq(trader3TokensAfterPrimary, primaryBuyAmount2, "Trader3 should have primary amount");
+        assertEq(trader4TokensAfterPrimary, primaryBuyAmount3, "Trader4 should have primary amount");
+
+        vm.startPrank(trader1);
+        trading.setApprovalForAll(address(trading), true);
+        uint256 secondaryPrice1 = (PRICE_PER_UNIT * 120) / 100;
+        uint256 sellOrderId1 = trading.createSellOrder(tokenId, 10, secondaryPrice1);
+        vm.stopPrank();
+
+        vm.startPrank(trader3);
+        monaToken.approve(address(trading), 10 * secondaryPrice1 * 2);
+        trading.buyFromOrder(sellOrderId1, 10);
+        vm.stopPrank();
+
+        uint256 protocolTreasuryAfterSecondary = monaToken.balanceOf(protocolTreasury);
+        uint256 lpTreasuryAfterSecondary = monaToken.balanceOf(lpTreasury);
+
+        uint256 secondaryPrice = 10 * secondaryPrice1;
+        uint256 expectedProtocolFeeSecondary = (secondaryPrice * protocolFeeBPS) / 10000;
+        uint256 expectedLpFeeSecondary = (secondaryPrice * lpFeeBPS) / 10000;
+
+        assertEq(
+            protocolTreasuryAfterSecondary - protocolTreasuryAfterPrimary,
+            expectedProtocolFeeSecondary,
+            "Protocol should receive fee on secondary sale"
+        );
+        assertEq(
+            lpTreasuryAfterSecondary - lpTreasuryAfterPrimary,
+            expectedLpFeeSecondary,
+            "LP should receive fee on secondary sale"
+        );
+
+        uint256 trader1TokensAfterSecondary = trading.balanceOf(trader1, tokenId);
+        uint256 trader3TokensAfterSecondary = trading.balanceOf(trader3, tokenId);
+
+        assertEq(trader1TokensAfterSecondary, 10, "Trader1 should have 10 left after selling 10");
+        assertEq(trader3TokensAfterSecondary, primaryBuyAmount2 + 10, "Trader3 should have primary + secondary");
+
+        vm.startPrank(trader3);
+        trading.setApprovalForAll(address(trading), true);
+        uint256 secondaryPrice2 = (PRICE_PER_UNIT * 130) / 100;
+        uint256 sellOrderId2 = trading.createSellOrder(tokenId, 5, secondaryPrice2);
+        vm.stopPrank();
+
+        vm.startPrank(trader4);
+        monaToken.approve(address(trading), 5 * secondaryPrice2 * 2);
+        trading.buyFromOrder(sellOrderId2, 5);
+        vm.stopPrank();
+
+        uint256 trader3TokensAfterSecondary2 = trading.balanceOf(trader3, tokenId);
+        uint256 trader4TokensAfterSecondary2 = trading.balanceOf(trader4, tokenId);
+
+        assertEq(trader3TokensAfterSecondary2, 20, "Trader3 should have 20 left after selling 5");
+        assertEq(trader4TokensAfterSecondary2, primaryBuyAmount3 + 5, "Trader4 should have primary + secondary");
+
+        FGOFuturesLibrary.FuturesContract memory fc = futuresContract.getFuturesContract(contractId);
+        fulfillmentContract.setFulfillmentStatus(ORDER_ID, 3, 3);
+        vm.warp(fc.futuresSettlementDate + 1);
+
+        uint256 botBalanceBefore = monaToken.balanceOf(settlementBot1);
+        uint256 settlementPoolBeforeSettle = settlement.getSettlementRewardPool(contractId);
+
+        vm.startPrank(settlementBot1);
+        settlement.settleFuturesContract(contractId);
+        vm.stopPrank();
+
+        uint256 botBalanceAfter = monaToken.balanceOf(settlementBot1);
+        uint256 settlementPoolAfterSettle = settlement.getSettlementRewardPool(contractId);
+
+        assertGt(botBalanceAfter, botBalanceBefore, "Bot should receive reward");
+        assertLt(settlementPoolAfterSettle, settlementPoolBeforeSettle, "Settlement pool should be depleted by bot reward");
+
+        uint256 trader1FinalTokens = trading.balanceOf(trader1, tokenId);
+        uint256 trader3FinalTokens = trading.balanceOf(trader3, tokenId);
+        uint256 trader4FinalTokens = trading.balanceOf(trader4, tokenId);
+
+        assertEq(trader1FinalTokens, 10, "Trader1 should still have 10 futures tokens before claim");
+        assertEq(trader3FinalTokens, 20, "Trader3 should have 20 futures tokens before claim");
+        assertEq(trader4FinalTokens, 20, "Trader4 should have 20 futures tokens before claim");
+
+        vm.startPrank(trader1);
+        escrow.claimChildAfterSettlement(contractId);
+        vm.stopPrank();
+
+        vm.startPrank(trader3);
+        escrow.claimChildAfterSettlement(contractId);
+        vm.stopPrank();
+
+        vm.startPrank(trader4);
+        escrow.claimChildAfterSettlement(contractId);
+        vm.stopPrank();
+
+        uint256 trader1ChildBalance = childContract.balanceOf(trader1, CHILD_ID);
+        uint256 trader3ChildBalance = childContract.balanceOf(trader3, CHILD_ID);
+        uint256 trader4ChildBalance = childContract.balanceOf(trader4, CHILD_ID);
+
+        assertEq(trader1ChildBalance, trader1FinalTokens, "Trader1 should receive child equal to final tokens");
+        assertEq(trader3ChildBalance, trader3FinalTokens, "Trader3 should receive child equal to final tokens");
+        assertEq(trader4ChildBalance, trader4FinalTokens, "Trader4 should receive child equal to final tokens");
+
+        assertEq(trading.balanceOf(trader1, tokenId), 0, "Trader1 should burn all futures tokens");
+        assertEq(trading.balanceOf(trader3, tokenId), 0, "Trader3 should burn all futures tokens");
+        assertEq(trading.balanceOf(trader4, tokenId), 0, "Trader4 should burn all futures tokens");
+
+        assertTrue(settlement.isContractSettled(contractId), "Contract should be settled");
+        assertTrue(futuresContract.getFuturesContract(contractId).isSettled, "Contract should be marked settled");
     }
 }

@@ -41,7 +41,6 @@ export function handleSellOrderCreated(event: SellOrderCreatedEvent): void {
   let futuresId = Bytes.fromByteArray(ByteArray.fromBigInt(contractId));
 
   entity.orderId = event.params.orderId;
-  entity.tokenId = event.params.tokenId;
   entity.quantity = event.params.quantity;
   entity.pricePerUnit = event.params.pricePerUnit;
   entity.seller = event.params.seller;
@@ -56,17 +55,19 @@ export function handleSellOrderCreated(event: SellOrderCreatedEvent): void {
 
   let futuresEntity = FuturesContract.load(futuresId);
 
-  if (futuresEntity) {
-    let orders = futuresEntity.orders;
-
-    if (!orders) {
-      orders = [];
-    }
-    orders.push(entity.id);
-    futuresEntity.orders = orders;
-
-    futuresEntity.save();
+  if (!futuresEntity) {
+    futuresEntity = new FuturesContract(futuresId);
   }
+
+  let orders = futuresEntity.orders;
+
+  if (!orders) {
+    orders = [];
+  }
+  orders.push(entity.id);
+  futuresEntity.orders = orders;
+
+  futuresEntity.save();
 }
 
 export function handleSellOrderFilled(event: SellOrderFilledEvent): void {

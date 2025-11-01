@@ -21,14 +21,14 @@ contract FGOFuturesSettlement is ReentrancyGuard {
     string public name;
 
     uint256 public constant BASIS_POINTS = 10000;
-    uint256 public constant MAX_STAKE_MULTIPLIER_BPS = 15000;
-    uint256 private minStakeAmount;
-    uint256 private maxSettlementDelay;
-    uint256 private slashPercentageBPS;
+    uint256 private _minStakeAmount;
+    uint256 private _maxSettlementDelay;
+    uint256 private _slashPercentageBPS;
 
-    mapping(address => FGOFuturesLibrary.SettlementBot) private settlementBots;
-    mapping(uint256 => FGOFuturesLibrary.SettlementMetrics) private settlements;
-    mapping(uint256 => bool) private contractSettled;
+    mapping(address => FGOFuturesLibrary.SettlementBot) private _settlementBots;
+    mapping(uint256 => FGOFuturesLibrary.SettlementMetrics) private _settlements;
+    mapping(uint256 => bool) private _contractSettled;
+    mapping(uint256 => uint256) private _settlementRewardPool;
 
     event SettlementBotRegistered(uint256 stakeAmount, address bot);
     event SettlementBotSlashed(uint256 slashAmount, address bot);
@@ -53,29 +53,16 @@ contract FGOFuturesSettlement is ReentrancyGuard {
         _;
     }
 
-    modifier onlyTrustedSettlementBot(uint256 contractId) {
-        FGOFuturesLibrary.FuturesContract memory fc = futuresContract
-            .getFuturesContract(contractId);
-        bool isTrusted = false;
-        for (uint256 i = 0; i < fc.trustedSettlementBots.length; i++) {
-            if (fc.trustedSettlementBots[i] == msg.sender) {
-                isTrusted = true;
-                break;
-            }
-        }
-        if (!isTrusted) revert FGOFuturesErrors.NotTrustedSettlementBot();
+    modifier requiresQualifyingNFT() {
         if (!hasQualifyingNFT(msg.sender)) {
             revert FGOFuturesErrors.SettlementBotLacksQualifyingNFT();
-        }
-        if (settlementBots[msg.sender].monaStaked < minStakeAmount) {
-            revert FGOFuturesErrors.InsufficientStake();
         }
         _;
     }
 
-    modifier requiresQualifyingNFT() {
-        if (!hasQualifyingNFT(msg.sender)) {
-            revert FGOFuturesErrors.SettlementBotLacksQualifyingNFT();
+    modifier onlyTradingContract() {
+        if (msg.sender != address(trading)) {
+            revert FGOFuturesErrors.Unauthorized();
         }
         _;
     }
@@ -85,17 +72,17 @@ contract FGOFuturesSettlement is ReentrancyGuard {
         address _futuresContract,
         address _escrow,
         address _trading,
-        uint256 _minStakeAmount,
-        uint256 _maxSettlementDelay,
-        uint256 _slashPercentageBPS
+        uint256 minStakeAmount,
+        uint256 maxSettlementDelay,
+        uint256 slashPercentageBPS
     ) {
         accessControl = FGOFuturesAccessControl(_accessControl);
         futuresContract = FGOFuturesContract(_futuresContract);
         escrow = FGOFuturesEscrow(_escrow);
         trading = FGOFuturesTrading(_trading);
-        minStakeAmount = _minStakeAmount;
-        maxSettlementDelay = _maxSettlementDelay;
-        slashPercentageBPS = _slashPercentageBPS;
+        _minStakeAmount = minStakeAmount;
+        _maxSettlementDelay = maxSettlementDelay;
+        _slashPercentageBPS = slashPercentageBPS;
         symbol = "FGOSET";
         name = "FGOFuturesSettlement";
     }
@@ -103,16 +90,16 @@ contract FGOFuturesSettlement is ReentrancyGuard {
     function registerSettlementBot(
         uint256 stakeAmount
     ) external nonReentrant requiresQualifyingNFT {
-        if (stakeAmount < minStakeAmount)
+        if (stakeAmount < _minStakeAmount)
             revert FGOFuturesErrors.InvalidAmount();
 
-        uint256 currentStake = settlementBots[msg.sender].monaStaked;
+        uint256 currentStake = _settlementBots[msg.sender].monaStaked;
         if (currentStake > 0) revert FGOFuturesErrors.AlreadyRegistered();
 
         address monaToken = accessControl.monaToken();
         IERC20(monaToken).transferFrom(msg.sender, address(this), stakeAmount);
 
-        settlementBots[msg.sender] = FGOFuturesLibrary.SettlementBot({
+        _settlementBots[msg.sender] = FGOFuturesLibrary.SettlementBot({
             totalSettlements: 0,
             averageDelaySeconds: 0,
             monaStaked: stakeAmount,
@@ -123,77 +110,121 @@ contract FGOFuturesSettlement is ReentrancyGuard {
         emit SettlementBotRegistered(stakeAmount, msg.sender);
     }
 
+    function addToRewardPool(
+        uint256 contractId,
+        uint256 amount
+    ) external onlyTradingContract {
+        if (amount == 0) revert FGOFuturesErrors.InvalidAmount();
+        _settlementRewardPool[contractId] += amount;
+    }
+
     function settleFuturesContract(
         uint256 contractId
-    ) external nonReentrant onlyTrustedSettlementBot(contractId) {
+    ) external nonReentrant {
         FGOFuturesLibrary.FuturesContract memory fc = futuresContract
             .getFuturesContract(contractId);
 
         if (fc.isSettled) revert FGOFuturesErrors.AlreadySettled();
         if (!fc.isActive) revert FGOFuturesErrors.ContractNotActive();
-        if (contractSettled[contractId])
+        if (_contractSettled[contractId])
             revert FGOFuturesErrors.AlreadySettled();
 
         if (block.timestamp < fc.futuresSettlementDate)
             revert FGOFuturesErrors.SettlementNotReady();
 
+        uint256 availableReward = _settlementRewardPool[contractId];
         uint256 settlementDelay = block.timestamp - fc.futuresSettlementDate;
         address monaToken = accessControl.monaToken();
 
-        if (settlementDelay > maxSettlementDelay) {
-            uint256 slashAmount = (settlementBots[msg.sender].monaStaked *
-                slashPercentageBPS) / BASIS_POINTS;
-            settlementBots[msg.sender].monaStaked -= slashAmount;
-            settlementBots[msg.sender].slashEvents++;
+        if (availableReward == 0) {
+            _contractSettled[contractId] = true;
+            futuresContract.settleFuturesContract(contractId);
+
+            _settlements[contractId] = FGOFuturesLibrary.SettlementMetrics({
+                settlementTime: block.timestamp,
+                delay: settlementDelay,
+                reward: 0,
+                settlementBot: msg.sender
+            });
+
+            emit ContractSettled(contractId, 0, fc.futuresSettlementDate, msg.sender);
+            return;
+        }
+
+        _requireTrustedSettlementBot(contractId);
+
+        if (settlementDelay > _maxSettlementDelay) {
+            uint256 slashAmount = (_settlementBots[msg.sender].monaStaked *
+                _slashPercentageBPS) / BASIS_POINTS;
+            _settlementBots[msg.sender].monaStaked -= slashAmount;
+            _settlementBots[msg.sender].slashEvents++;
 
             IERC20(monaToken).transfer(fc.originalHolder, slashAmount);
 
             emit SettlementBotSlashed(slashAmount, msg.sender);
         }
 
-        uint256 baseReward = (fc.pricePerUnit * fc.quantity * fc.settlementRewardBPS) /
-            BASIS_POINTS;
+        uint256 settlerStake = _settlementBots[msg.sender].monaStaked;
+        uint256 maxOtherStake = 0;
 
-        uint256 stakeMultiplier = _calculateStakeMultiplier(msg.sender);
-        uint256 totalReward = (baseReward * stakeMultiplier) / BASIS_POINTS;
+        for (uint256 i = 0; i < fc.trustedSettlementBots.length; i++) {
+            address otherBot = fc.trustedSettlementBots[i];
+            if (otherBot != msg.sender) {
+                uint256 otherStake = _settlementBots[otherBot].monaStaked;
+                if (otherStake > maxOtherStake) {
+                    maxOtherStake = otherStake;
+                }
+            }
+        }
 
-        IERC20(monaToken).transferFrom(
-            fc.originalHolder,
-            msg.sender,
-            totalReward
-        );
+        if (settlerStake < maxOtherStake) {
+            uint256 stakeDifference = maxOtherStake - settlerStake;
+            uint256 stakeBasedSlash = (stakeDifference * _slashPercentageBPS) /
+                BASIS_POINTS;
 
-        contractSettled[contractId] = true;
+            uint256 maxSlash = (settlerStake * 5000) / BASIS_POINTS;
+            uint256 actualSlash = stakeBasedSlash > maxSlash ? maxSlash : stakeBasedSlash;
+
+            _settlementBots[msg.sender].monaStaked -= actualSlash;
+            IERC20(monaToken).transfer(fc.originalHolder, actualSlash);
+
+            emit SettlementBotSlashed(actualSlash, msg.sender);
+        }
+
+        _settlementRewardPool[contractId] = 0;
+        IERC20(monaToken).transfer(msg.sender, availableReward);
+
+        _contractSettled[contractId] = true;
 
         futuresContract.settleFuturesContract(contractId);
 
-        settlements[contractId] = FGOFuturesLibrary.SettlementMetrics({
+        _settlements[contractId] = FGOFuturesLibrary.SettlementMetrics({
             settlementTime: block.timestamp,
             delay: settlementDelay,
-            reward: totalReward,
+            reward: availableReward,
             settlementBot: msg.sender
         });
 
-        settlementBots[msg.sender].totalSettlements++;
-        uint256 oldAverage = settlementBots[msg.sender].averageDelaySeconds;
+        _settlementBots[msg.sender].totalSettlements++;
+        uint256 oldAverage = _settlementBots[msg.sender].averageDelaySeconds;
         uint256 newAverage = (oldAverage *
-            (settlementBots[msg.sender].totalSettlements - 1) +
-            settlementDelay) / settlementBots[msg.sender].totalSettlements;
-        settlementBots[msg.sender].averageDelaySeconds = newAverage;
+            (_settlementBots[msg.sender].totalSettlements - 1) +
+            settlementDelay) / _settlementBots[msg.sender].totalSettlements;
+        _settlementBots[msg.sender].averageDelaySeconds = newAverage;
 
         emit ContractSettled(
             contractId,
-            totalReward,
+            availableReward,
             fc.futuresSettlementDate,
             msg.sender
         );
     }
 
     function withdrawStake() external nonReentrant {
-        uint256 amount = settlementBots[msg.sender].monaStaked;
+        uint256 amount = _settlementBots[msg.sender].monaStaked;
         if (amount == 0) revert FGOFuturesErrors.NoStakeToWithdraw();
 
-        settlementBots[msg.sender].monaStaked = 0;
+        _settlementBots[msg.sender].monaStaked = 0;
 
         address monaToken = accessControl.monaToken();
         IERC20(monaToken).transfer(msg.sender, amount);
@@ -209,7 +240,7 @@ contract FGOFuturesSettlement is ReentrancyGuard {
 
         if (fc.isSettled) revert FGOFuturesErrors.AlreadySettled();
         if (!fc.isActive) revert FGOFuturesErrors.ContractNotActive();
-        if (contractSettled[contractId])
+        if (_contractSettled[contractId])
             revert FGOFuturesErrors.AlreadySettled();
 
         bool isOriginalHolder = (msg.sender == fc.originalHolder);
@@ -228,13 +259,13 @@ contract FGOFuturesSettlement is ReentrancyGuard {
 
         uint256 timeSinceSettlementDate = block.timestamp - fc.futuresSettlementDate;
 
-        if (timeSinceSettlementDate <= maxSettlementDelay)
+        if (timeSinceSettlementDate <= _maxSettlementDelay)
             revert FGOFuturesErrors.SettlementNotReady();
 
         bool anyBotCanSettle = false;
         for (uint256 i = 0; i < fc.trustedSettlementBots.length; i++) {
             if (hasQualifyingNFT(fc.trustedSettlementBots[i]) && 
-                settlementBots[fc.trustedSettlementBots[i]].monaStaked >= minStakeAmount) {
+                _settlementBots[fc.trustedSettlementBots[i]].monaStaked >= _minStakeAmount) {
                 anyBotCanSettle = true;
                 break;
             }
@@ -242,10 +273,10 @@ contract FGOFuturesSettlement is ReentrancyGuard {
 
         if (anyBotCanSettle) revert FGOFuturesErrors.Unauthorized();
 
-        contractSettled[contractId] = true;
+        _contractSettled[contractId] = true;
         futuresContract.settleFuturesContract(contractId);
 
-        settlements[contractId] = FGOFuturesLibrary.SettlementMetrics({
+        _settlements[contractId] = FGOFuturesLibrary.SettlementMetrics({
             settlementTime: block.timestamp,
             delay: timeSinceSettlementDate,
             reward: 0,
@@ -258,41 +289,47 @@ contract FGOFuturesSettlement is ReentrancyGuard {
     function getSettlementBot(
         address bot
     ) external view returns (FGOFuturesLibrary.SettlementBot memory) {
-        return settlementBots[bot];
+        return _settlementBots[bot];
     }
 
     function getSettlementMetrics(
         uint256 contractId
     ) external view returns (FGOFuturesLibrary.SettlementMetrics memory) {
-        return settlements[contractId];
+        return _settlements[contractId];
     }
 
     function isContractSettled(
         uint256 contractId
     ) external view returns (bool) {
-        return contractSettled[contractId];
+        return _contractSettled[contractId];
+    }
+
+    function getSettlementRewardPool(
+        uint256 contractId
+    ) external view returns (uint256) {
+        return _settlementRewardPool[contractId];
     }
 
     function updateSettlementParameters(
-        uint256 _minStakeAmount,
-        uint256 _maxSettlementDelay,
-        uint256 _slashPercentageBPS
+        uint256 minStakeAmount,
+        uint256 maxSettlementDelay,
+        uint256 slashPercentageBPS
     ) external onlyAdmin {
-        minStakeAmount = _minStakeAmount;
-        maxSettlementDelay = _maxSettlementDelay;
-        slashPercentageBPS = _slashPercentageBPS;
+        _minStakeAmount = minStakeAmount;
+        _maxSettlementDelay = maxSettlementDelay;
+        _slashPercentageBPS = slashPercentageBPS;
     }
 
     function getMinStakeAmount() external view returns (uint256) {
-        return minStakeAmount;
+        return _minStakeAmount;
     }
 
     function getMaxSettlementDelay() external view returns (uint256) {
-        return maxSettlementDelay;
+        return _maxSettlementDelay;
     }
 
     function getSlashPercentageBPS() external view returns (uint256) {
-        return slashPercentageBPS;
+        return _slashPercentageBPS;
     }
 
     function hasQualifyingNFT(address bot) public view returns (bool) {
@@ -308,7 +345,7 @@ contract FGOFuturesSettlement is ReentrancyGuard {
     function increaseStake(
         uint256 additionalStake
     ) external nonReentrant requiresQualifyingNFT {
-        if (settlementBots[msg.sender].botAddress == address(0)) {
+        if (_settlementBots[msg.sender].botAddress == address(0)) {
             revert FGOFuturesErrors.Unauthorized();
         }
         if (additionalStake == 0) revert FGOFuturesErrors.InvalidAmount();
@@ -320,26 +357,27 @@ contract FGOFuturesSettlement is ReentrancyGuard {
             additionalStake
         );
 
-        settlementBots[msg.sender].monaStaked += additionalStake;
+        _settlementBots[msg.sender].monaStaked += additionalStake;
 
-        emit StakeIncreased(settlementBots[msg.sender].monaStaked, msg.sender);
+        emit StakeIncreased(_settlementBots[msg.sender].monaStaked, msg.sender);
     }
 
-    function _calculateStakeMultiplier(
-        address bot
-    ) internal view returns (uint256) {
-        uint256 botStake = settlementBots[bot].monaStaked;
-        if (botStake <= minStakeAmount) {
-            return BASIS_POINTS;
+    function _requireTrustedSettlementBot(uint256 contractId) internal view {
+        FGOFuturesLibrary.FuturesContract memory fc = futuresContract
+            .getFuturesContract(contractId);
+        bool isTrusted = false;
+        for (uint256 i = 0; i < fc.trustedSettlementBots.length; i++) {
+            if (fc.trustedSettlementBots[i] == msg.sender) {
+                isTrusted = true;
+                break;
+            }
         }
-
-        uint256 stakeRatio = (botStake * BASIS_POINTS) / minStakeAmount;
-        uint256 multiplier = BASIS_POINTS + ((stakeRatio - BASIS_POINTS) / 2);
-
-        if (multiplier > MAX_STAKE_MULTIPLIER_BPS) {
-            return MAX_STAKE_MULTIPLIER_BPS;
+        if (!isTrusted) revert FGOFuturesErrors.NotTrustedSettlementBot();
+        if (!hasQualifyingNFT(msg.sender)) {
+            revert FGOFuturesErrors.SettlementBotLacksQualifyingNFT();
         }
-
-        return multiplier;
+        if (_settlementBots[msg.sender].monaStaked < _minStakeAmount) {
+            revert FGOFuturesErrors.InsufficientStake();
+        }
     }
 }
