@@ -19,6 +19,7 @@ contract FGOFuturesSettlement is ReentrancyGuard {
     FGOFuturesTrading public trading;
     string public symbol;
     string public name;
+    address public lpTreasury;
 
     uint256 public constant BASIS_POINTS = 10000;
     uint256 private _minStakeAmount;
@@ -26,7 +27,8 @@ contract FGOFuturesSettlement is ReentrancyGuard {
     uint256 private _slashPercentageBPS;
 
     mapping(address => FGOFuturesLibrary.SettlementBot) private _settlementBots;
-    mapping(uint256 => FGOFuturesLibrary.SettlementMetrics) private _settlements;
+    mapping(uint256 => FGOFuturesLibrary.SettlementMetrics)
+        private _settlements;
     mapping(uint256 => bool) private _contractSettled;
     mapping(uint256 => uint256) private _settlementRewardPool;
 
@@ -38,6 +40,7 @@ contract FGOFuturesSettlement is ReentrancyGuard {
         uint256 futuresSettlementDate,
         address settlementBot
     );
+    event RewardSlashed(uint256 slashAmount, address bot);
     event EmergencySettlement(
         uint256 indexed contractId,
         address settler,
@@ -72,6 +75,7 @@ contract FGOFuturesSettlement is ReentrancyGuard {
         address _futuresContract,
         address _escrow,
         address _trading,
+        address _lpTreasury,
         uint256 minStakeAmount,
         uint256 maxSettlementDelay,
         uint256 slashPercentageBPS
@@ -83,6 +87,7 @@ contract FGOFuturesSettlement is ReentrancyGuard {
         _minStakeAmount = minStakeAmount;
         _maxSettlementDelay = maxSettlementDelay;
         _slashPercentageBPS = slashPercentageBPS;
+        lpTreasury = _lpTreasury;
         symbol = "FGOSET";
         name = "FGOFuturesSettlement";
     }
@@ -118,9 +123,7 @@ contract FGOFuturesSettlement is ReentrancyGuard {
         _settlementRewardPool[contractId] += amount;
     }
 
-    function settleFuturesContract(
-        uint256 contractId
-    ) external nonReentrant {
+    function settleFuturesContract(uint256 contractId) external nonReentrant {
         FGOFuturesLibrary.FuturesContract memory fc = futuresContract
             .getFuturesContract(contractId);
 
@@ -147,7 +150,12 @@ contract FGOFuturesSettlement is ReentrancyGuard {
                 settlementBot: msg.sender
             });
 
-            emit ContractSettled(contractId, 0, fc.futuresSettlementDate, msg.sender);
+            emit ContractSettled(
+                contractId,
+                0,
+                fc.futuresSettlementDate,
+                msg.sender
+            );
             return;
         }
 
@@ -182,13 +190,15 @@ contract FGOFuturesSettlement is ReentrancyGuard {
             uint256 stakeBasedSlash = (stakeDifference * _slashPercentageBPS) /
                 BASIS_POINTS;
 
-            uint256 maxSlash = (settlerStake * 5000) / BASIS_POINTS;
-            uint256 actualSlash = stakeBasedSlash > maxSlash ? maxSlash : stakeBasedSlash;
+            uint256 maxSlash = (availableReward * 5000) / BASIS_POINTS;
+            uint256 rewardSlash = stakeBasedSlash > maxSlash
+                ? maxSlash
+                : stakeBasedSlash;
 
-            _settlementBots[msg.sender].monaStaked -= actualSlash;
-            IERC20(monaToken).transfer(fc.originalHolder, actualSlash);
+            availableReward -= rewardSlash;
+            IERC20(monaToken).transfer(lpTreasury, rewardSlash);
 
-            emit SettlementBotSlashed(actualSlash, msg.sender);
+            emit RewardSlashed(rewardSlash, msg.sender);
         }
 
         _settlementRewardPool[contractId] = 0;
@@ -257,15 +267,19 @@ contract FGOFuturesSettlement is ReentrancyGuard {
         if (block.timestamp < fc.futuresSettlementDate)
             revert FGOFuturesErrors.SettlementNotReady();
 
-        uint256 timeSinceSettlementDate = block.timestamp - fc.futuresSettlementDate;
+        uint256 timeSinceSettlementDate = block.timestamp -
+            fc.futuresSettlementDate;
 
         if (timeSinceSettlementDate <= _maxSettlementDelay)
             revert FGOFuturesErrors.SettlementNotReady();
 
         bool anyBotCanSettle = false;
         for (uint256 i = 0; i < fc.trustedSettlementBots.length; i++) {
-            if (hasQualifyingNFT(fc.trustedSettlementBots[i]) && 
-                _settlementBots[fc.trustedSettlementBots[i]].monaStaked >= _minStakeAmount) {
+            if (
+                hasQualifyingNFT(fc.trustedSettlementBots[i]) &&
+                _settlementBots[fc.trustedSettlementBots[i]].monaStaked >=
+                _minStakeAmount
+            ) {
                 anyBotCanSettle = true;
                 break;
             }
@@ -308,6 +322,11 @@ contract FGOFuturesSettlement is ReentrancyGuard {
         uint256 contractId
     ) external view returns (uint256) {
         return _settlementRewardPool[contractId];
+    }
+
+    function setLpTreasury(address _lpTreasury) external onlyAdmin {
+        if (_lpTreasury == address(0)) revert FGOFuturesErrors.InvalidAmount();
+        lpTreasury = _lpTreasury;
     }
 
     function updateSettlementParameters(

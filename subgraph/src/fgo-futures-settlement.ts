@@ -5,6 +5,7 @@ import {
   FGOFuturesSettlement,
   SettlementBotRegistered as SettlementBotRegisteredEvent,
   SettlementBotSlashed as SettlementBotSlashedEvent,
+  RewardSlashed as RewardSlashedEvent,
   StakeWithdrawn as StakeWithdrawnEvent,
   StakeIncreased as StakeIncreasedEvent,
 } from "../generated/FGOFuturesSettlement/FGOFuturesSettlement";
@@ -139,6 +140,7 @@ export function handleSettlementBotRegistered(
   entity.averageDelaySeconds = data.averageDelaySeconds;
   entity.totalSlashEvents = data.slashEvents;
   entity.totalAmountSlashed = BigInt.fromI32(0);
+  entity.totalRewardSlashed = BigInt.fromI32(0);
   entity.save();
 }
 
@@ -156,6 +158,19 @@ export function handleSettlementBotSlashed(
     entity.totalSlashEvents = entity.totalSlashEvents.plus(BigInt.fromI32(1));
     entity.totalAmountSlashed = event.params.slashAmount;
     entity.stakeAmount = data.monaStaked;
+    entity.save();
+  }
+}
+
+export function handleRewardSlashed(event: RewardSlashedEvent): void {
+  let entity = SettlementBot.load(
+    Bytes.fromUTF8(event.params.bot.toHexString())
+  );
+
+  if (entity) {
+    entity.totalRewardSlashed = entity.totalRewardSlashed.plus(
+      event.params.slashAmount
+    );
     entity.save();
   }
 }
@@ -187,6 +202,7 @@ export function handleStakeIncreased(event: StakeIncreasedEvent): void {
     entity.totalSlashEvents = BigInt.fromI32(0);
     entity.totalSettlements = BigInt.fromI32(0);
     entity.averageDelaySeconds = BigInt.fromI32(0);
+    entity.totalRewardSlashed = BigInt.fromI32(0);
   }
 
   entity.stakeAmount = data.monaStaked;

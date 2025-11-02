@@ -2,19 +2,19 @@
   "lens-testnet": {
     "FGOFuturesContract": {
       "address": "0xf9E98F4aC9ad7da87DFc4318968711E40279383f",
-      "startBlock": 4180660
+      "startBlock": 4185136
     },
     "FGOFactory": {
-      "address": "0x6b43c0527200792F93717fb0f47da928C667751b"
+      "address": "0xf0434751a063F57D98CABe88620515DAB0895CeA"
     },
     "FGOFuturesTrading": {
-      "address": "0xeEd2bB01CC6EB531d111Da4cBEA3515fc284848c"
+      "address": "0x0C8A98Bd8152F855d918e9606b354a0caC61F1aF"
     },
     "FGOFuturesEscrow": {
-      "address": "0x0727bec4298c90d776cd1B6d833bd105234cB84f"
+      "address": "0xee8B5b5b582Dc5D31651b10579236dB74f5B6168"
     },
     "FGOFuturesSettlement": {
-      "address": "0xF49D1bd99F44F71f525f59C68947Ed32C37017b1"
+      "address": "0x7099069Dc36e49E1C158f7ce9a6A0eab62A695c4"
     }
   }
 }

@@ -48,8 +48,14 @@ contract FGOFuturesTrading is ERC1155, ReentrancyGuard {
         address buyer
     );
     event SellOrderCancelled(uint256 indexed orderId, address seller);
+    event SellOrderQuantityUpdated(
+        uint256 indexed orderId,
+        uint256 indexed tokenId,
+        uint256 additionalQuantity
+    );
     event FeesCollected(
         uint256 indexed orderId,
+        uint256 settlementFee,
         uint256 protocolFee,
         uint256 lpFee
     );
@@ -210,7 +216,7 @@ contract FGOFuturesTrading is ERC1155, ReentrancyGuard {
         _reservedQuantity[order.seller][order.tokenId] -= quantityToBuy;
 
         emit SellOrderFilled(orderId, quantityToBuy, totalPrice, msg.sender);
-        emit FeesCollected(orderId, protocolFee, lpFee);
+        emit FeesCollected(orderId, settlementFee, protocolFee, lpFee);
     }
 
     function cancelOrder(uint256 orderId) external nonReentrant {
@@ -248,6 +254,8 @@ contract FGOFuturesTrading is ERC1155, ReentrancyGuard {
         FGOFuturesLibrary.SellOrder storage order = _sellOrders[orderId];
         order.quantity += additionalQuantity;
         _reservedQuantity[order.seller][tokenId] += additionalQuantity;
+
+        emit SellOrderQuantityUpdated(orderId, tokenId, additionalQuantity);
     }
 
     function getSellOrder(

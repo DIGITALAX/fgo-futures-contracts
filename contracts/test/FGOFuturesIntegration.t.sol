@@ -219,6 +219,7 @@ contract FGOFuturesIntegrationTest is Test {
             address(futuresContract),
             address(escrow),
             address(trading),
+            address(lpTreasury),
             MIN_STAKE,
             3600,
             1000

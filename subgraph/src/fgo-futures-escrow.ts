@@ -3,6 +3,7 @@ import {
   BigInt,
   ByteArray,
   Bytes,
+  log,
   store,
 } from "@graphprotocol/graph-ts";
 import {
@@ -56,36 +57,40 @@ export function handleChildClaimedAfterSettlement(
 }
 
 export function handleRightsDeposited(event: RightsDepositedEvent): void {
-  let entity = new EscrowedRight(event.params.rightsKey);
-
-  entity.rightsKey = event.params.rightsKey;
-  entity.depositor = event.params.depositor;
-  entity.childContract = event.params.childContract;
-  entity.originalMarket = event.params.originalMarket;
-  entity.childId = event.params.childId;
-  entity.orderId = event.params.orderId;
-  entity.amount = event.params.amount;
+  let entity = EscrowedRight.load(event.params.rightsKey);
   let escrow = FGOFuturesEscrow.bind(event.address);
-  entity.estimatedDeliveryDuration = escrow.getEscrowedRights(
+  let data = escrow.getEscrowedRights(
     event.params.childId,
     event.params.orderId,
     event.params.childContract,
     event.params.originalMarket,
     event.params.depositor
-  ).estimatedDeliveryDuration;
-  entity.amountUsedForFutures = BigInt.fromI32(0);
-  entity.depositedAt = event.block.timestamp;
-  entity.futuresCreated = false;
+  );
+  if (!entity) {
+    entity = new EscrowedRight(event.params.rightsKey);
+    entity.childId = event.params.childId;
+    entity.orderId = event.params.orderId;
+    entity.rightsKey = event.params.rightsKey;
+    entity.depositor = event.params.depositor;
+    entity.childContract = event.params.childContract;
+    entity.originalMarket = event.params.originalMarket;
+    entity.futuresCreated = false;
+    entity.estimatedDeliveryDuration = data.estimatedDeliveryDuration;
+    entity.depositedAt = event.block.timestamp;
+    entity.blockNumber = event.block.number;
+    entity.blockTimestamp = event.block.timestamp;
+    entity.transactionHash = event.transaction.hash;
+  }
+
+  entity.amount = data.amount;
+  entity.amountUsedForFutures = data.amountUsedForFutures;
+
   let entityId = Bytes.fromUTF8(
     event.params.childContract.toHexString() +
       "-" +
       event.params.childId.toHexString()
   );
   entity.child = entityId;
-
-  entity.blockNumber = event.block.number;
-  entity.blockTimestamp = event.block.timestamp;
-  entity.transactionHash = event.transaction.hash;
 
   entity.save();
 
@@ -130,7 +135,8 @@ export function handleRightsDeposited(event: RightsDepositedEvent): void {
       if (rights.guaranteedAmount.equals(event.params.amount)) {
         store.remove("PhysicalRights", receiverRights.id.toHexString());
       } else {
-        receiverRights.guaranteedAmount = rights.guaranteedAmount;
+   
+      receiverRights.guaranteedAmount =  receiverRights.guaranteedAmount.minus(event.params.amount);
         receiverRights.save();
       }
     }

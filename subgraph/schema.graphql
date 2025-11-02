@@ -20,7 +20,7 @@ type FuturesContract @entity {
   settlementRewardBPS: BigInt
   isActive: Boolean
   isSettled: Boolean
-  trustedSettlementBots: [Bytes!]
+  trustedSettlementBots: [SettlementBot!]
   orders: [Order!]
   childrenClaimed: [ChildClaimed!]
   escrowed: EscrowedRight
@@ -61,6 +61,7 @@ type SettlementBot @entity {
   averageDelaySeconds: BigInt!
   totalSlashEvents: BigInt!
   totalAmountSlashed: BigInt!
+  totalRewardSlashed: BigInt!
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
@@ -127,6 +128,7 @@ type Order @entity {
   transactionHash: Bytes!
   isActive: Boolean!
   filled: Boolean!
+  settlementFee: BigInt
   protocolFee: BigInt
   lpFee: BigInt
 }

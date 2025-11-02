@@ -8,9 +8,9 @@ dataSources:
     name: FGOFuturesContract
     network: lens-testnet
     source:
-      address: "0xf9E98F4aC9ad7da87DFc4318968711E40279383f"
+      address: "0x118558e1351FE59D2ebF6C3421045eBE9fD71ed8"
       abi: FGOFuturesContract
-      startBlock: 4180660
+      startBlock: 4185136
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -33,9 +33,9 @@ dataSources:
     name: FGOFuturesEscrow
     network: lens-testnet
     source:
-      address: "0x0727bec4298c90d776cd1B6d833bd105234cB84f"
+      address: "0xee8B5b5b582Dc5D31651b10579236dB74f5B6168"
       abi: FGOFuturesEscrow
-      startBlock: 4180660
+      startBlock: 4185136
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -63,9 +63,9 @@ dataSources:
     name: FGOFuturesSettlement
     network: lens-testnet
     source:
-      address: "0xF49D1bd99F44F71f525f59C68947Ed32C37017b1"
+      address: "0x7099069Dc36e49E1C158f7ce9a6A0eab62A695c4"
       abi: FGOFuturesSettlement
-      startBlock: 4180660
+      startBlock: 4185136
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -87,6 +87,8 @@ dataSources:
           handler: handleSettlementBotRegistered
         - event: SettlementBotSlashed(uint256,address)
           handler: handleSettlementBotSlashed
+        - event: RewardSlashed(uint256,address)
+          handler: handleRewardSlashed
         - event: StakeWithdrawn(uint256,address)
           handler: handleStakeWithdrawn
         - event: StakeIncreased(uint256,address)
@@ -96,9 +98,9 @@ dataSources:
     name: FGOFactory
     network: lens-testnet
     source:
-      address: "0x6b43c0527200792F93717fb0f47da928C667751b"
+      address: "0xf0434751a063F57D98CABe88620515DAB0895CeA"
       abi: FGOFactory
-      startBlock: 4180660
+      startBlock: 4185136
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -130,9 +132,9 @@ dataSources:
     name: FGOFuturesTrading
     network: lens-testnet
     source:
-      address: "0xeEd2bB01CC6EB531d111Da4cBEA3515fc284848c"
+      address: "0x0C8A98Bd8152F855d918e9606b354a0caC61F1aF"
       abi: FGOFuturesTrading
-      startBlock: 4180660
+      startBlock: 4185136
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -146,7 +148,7 @@ dataSources:
         - name: FGOFuturesContract
           file: ./abis/FGOFuturesContract.json
       eventHandlers:
-        - event: FeesCollected(indexed uint256,uint256,uint256)
+        - event: FeesCollected(indexed uint256,uint256,uint256,uint256)
           handler: handleFeesCollected
         - event: SellOrderCancelled(indexed uint256,address)
           handler: handleSellOrderCancelled
@@ -154,6 +156,8 @@ dataSources:
           handler: handleSellOrderCreated
         - event: SellOrderFilled(indexed uint256,uint256,uint256,address)
           handler: handleSellOrderFilled
+        - event: SellOrderQuantityUpdated(indexed uint256,indexed uint256,uint256)
+          handler: handleSellOrderQuantityUpdated
       file: ./src/fgo-futures-trading.ts
 templates:
   - name: FGOChild
