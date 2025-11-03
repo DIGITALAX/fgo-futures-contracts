@@ -367,3 +367,33 @@ templates:
           handler: handleParentUpdated
         - event: ParentCreated(indexed uint256,indexed address)
           handler: handleParentCreated
+  - name: FGOTemplateChild
+    kind: ethereum/contract
+    network: lens-testnet
+    source:
+      abi: FGOTemplateChild
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/fgo-template-child.ts
+      entities:
+        - Child
+        - Metadata
+        - PhysicalRights
+      abis:
+        - name: FGOTemplateChild
+          file: ./abis/FGOTemplateChild.json
+        - name: FGOChild
+          file: ./abis/FGOChild.json
+        - name: FGOMarket
+          file: ./abis/FGOMarket.json
+      eventHandlers:
+        - event: TemplateReserved(indexed uint256,indexed address)
+          handler: handleTemplateReserved
+        - event: ChildDeleted(indexed uint256)
+          handler: handleChildDeleted
+        - event: ChildMinted(indexed uint256,indexed uint256,indexed uint256,address,address,bool)
+          handler: handleChildMinted
+        - event: PhysicalRightsTransferred(uint256,uint256,uint256,address,address,address)
+          handler: handlePhysicalRightsTransferred

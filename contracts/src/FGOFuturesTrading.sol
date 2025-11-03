@@ -314,12 +314,12 @@ contract FGOFuturesTrading is ERC1155, ReentrancyGuard {
         protocolTreasury = _protocolTreasury;
     }
 
-    function set_protocolFeeBPS(uint256 protocolFeeBPS) external onlyAdmin {
+    function setProtocolFeeBPS(uint256 protocolFeeBPS) external onlyAdmin {
         if (protocolFeeBPS > 1000) revert FGOFuturesErrors.InvalidAmount();
         _protocolFeeBPS = protocolFeeBPS;
     }
 
-    function set_lpFeeBPS(uint256 lpFeeBPS) external onlyAdmin {
+    function setLPFeeBPS(uint256 lpFeeBPS) external onlyAdmin {
         if (lpFeeBPS > 1000) revert FGOFuturesErrors.InvalidAmount();
         _lpFeeBPS = lpFeeBPS;
     }

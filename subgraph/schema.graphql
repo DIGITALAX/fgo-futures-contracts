@@ -10,6 +10,7 @@ type FuturesContract @entity {
   originalMarket: Bytes # address
   originalHolder: Bytes # address
   blockNumber: BigInt
+  isFulfilled: Boolean
   blockTimestamp: BigInt
   transactionHash: Bytes
   uri: String
@@ -33,11 +34,14 @@ type FuturesContract @entity {
 
 type Child @entity {
   id: Bytes!
-  uri: String!
+  uri: String
   metadata: Metadata
-  physicalPrice: BigInt!
+  physicalPrice: BigInt
   childContract: Bytes!
+  childId: BigInt!
   isTemplate: Boolean!
+  futuresContracts: [FuturesContract!]
+  placements: [Child!]
 }
 
 type Metadata @entity {
@@ -227,6 +231,7 @@ type Parent @entity {
   metadata: Metadata
   uri: String
   workflow: FulfillmentWorkflow
+  children: [Child!]!
 }
 
 type Supplier @entity {

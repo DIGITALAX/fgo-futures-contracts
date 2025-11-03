@@ -22,19 +22,15 @@ export function handleChildCreated(event: ChildCreatedEvent): void {
   );
   let entity = new Child(entityId);
   let child = FGOChild.bind(event.address);
+
   let childData = child.getChildMetadata(event.params.childId);
 
   entity.uri = childData.uri;
-  let context = dataSource.context();
 
-  let template = context.getBytes("template");
-  if (template == Bytes.fromI32(0)) {
-    entity.isTemplate = false;
-  } else {
-    entity.isTemplate = true;
-  }
+  entity.isTemplate = false;
 
   entity.childContract = event.address;
+  entity.childId = event.params.childId;
   entity.physicalPrice = childData.physicalPrice;
   let ipfsHash = (entity.uri as string).split("/").pop();
   if (ipfsHash != null) {

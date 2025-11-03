@@ -5,6 +5,7 @@ import {
   ParentCreated as ParentCreatedEvent,
 } from "../generated/templates/FGOParent/FGOParent";
 import {
+  Child,
   FulfillmentStep,
   FulfillmentWorkflow,
   Parent,
@@ -50,7 +51,31 @@ export function handleParentCreated(event: ParentCreatedEvent): void {
   let data = parent.getDesignTemplate(entity.designId as BigInt);
   let accessControl = parent.accessControl();
   let accessControlContract = FGOAccessControl.bind(accessControl);
-   entity.uri = data.uri;
+  let children: Bytes[] = [];
+  for (let i = 0; i < data.childReferences.length; i++) {
+    let childId = Bytes.fromUTF8(
+      data.childReferences[i].childContract.toHexString() +
+        "-" +
+        data.childReferences[i].childId.toHexString()
+    );
+    let child = Child.load(childId);
+    if (child) {
+      children.push(child.id);
+      if (child.isTemplate) {
+        children = _loopChildren(children, child);
+      }
+    }
+    // if (!child) {
+    //   child = new Child(childId);
+    //   child.childContract = data.childReferences[i].childContract;
+    //   child.childId = data.childReferences[i].childId;
+    //   child.isTemplate = true;
+    //   child.futuresContracts = [];
+    //   child.save();
+    // }
+  }
+  entity.children = children;
+  entity.uri = data.uri;
 
   let ipfsHash = (entity.uri as string).split("/").pop();
   if (ipfsHash != null) {
@@ -81,7 +106,7 @@ export function handleParentCreated(event: ParentCreatedEvent): void {
     );
 
     step.workflow = fulfillmentWorkflow.id;
-    step.primaryPerformer =  data.workflow.physicalSteps[i].primaryPerformer;
+    step.primaryPerformer = data.workflow.physicalSteps[i].primaryPerformer;
     step.instructions = data.workflow.physicalSteps[i].instructions;
     step.fulfiller = Bytes.fromUTF8(
       accessControlContract.infraId().toHexString() +
@@ -131,4 +156,21 @@ export function handleParentCreated(event: ParentCreatedEvent): void {
 
   entity.workflow = fulfillmentWorkflow.id;
   entity.save();
+}
+
+function _loopChildren(children: Bytes[], child: Child): Bytes[] {
+  if (child.placements) {
+    for (let i = 0; i < (child.placements as Bytes[]).length; i++) {
+      let templateChild = Child.load((child.placements as Bytes[])[i]);
+      if (templateChild) {
+        if (templateChild.isTemplate) {
+          children = _loopChildren(children, templateChild);
+        }
+
+        children.push(templateChild.id);
+      }
+    }
+  }
+
+  return children;
 }

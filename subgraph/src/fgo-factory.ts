@@ -12,6 +12,7 @@ import {
   FGOFulfillment,
   FGOMarket,
   FGOParent,
+  FGOTemplateChild,
 } from "../generated/templates";
 import { FGOMarket as FGOMarketContract } from "../generated/templates/FGOMarket/FGOMarket";
 
@@ -19,7 +20,7 @@ export function handleChildContractDeployed(
   event: ChildContractDeployedEvent
 ): void {
   let context = new DataSourceContext();
-  context.setBytes("template", Bytes.fromI32(0));
+  context.setBytes("infraId", event.params.infraId);
   FGOChild.createWithContext(event.params.childContract, context);
 }
 
@@ -37,8 +38,8 @@ export function handleTemplateContractDeployed(
   event: TemplateContractEvent
 ): void {
   let context = new DataSourceContext();
-  context.setBytes("template", Bytes.fromI32(1));
-  FGOChild.createWithContext(event.params.templateContract, context);
+  context.setBytes("infraId", event.params.infraId);
+  FGOTemplateChild.createWithContext(event.params.templateContract, context);
 }
 
 export function handleInfrastructureDeployed(event: InfrastructureEvent): void {

@@ -1,8 +1,10 @@
-import { BigInt, Bytes } from "@graphprotocol/graph-ts";
+import { BigInt, ByteArray, Bytes, log } from "@graphprotocol/graph-ts";
 import {
+  Child,
   Fulfillment,
   FulfillmentOrderStep,
   FulfillmentWorkflow,
+  FuturesContract,
   Order,
   Parent,
 } from "../generated/schema";
@@ -21,17 +23,11 @@ export function handleStepCompleted(event: StepCompletedEvent): void {
     Bytes.fromUTF8(
       event.address.toHexString() +
         "-" +
-        event.params.orderId.toHexString() +
+        event.params.orderId.toString() +
         data.parentContract.toHexString() +
         data.parentId.toHexString()
     )
   );
-
-  if (entity) {
-    entity.currentStep = data.currentStep;
-    entity.lastUpdated = data.lastUpdated;
-    entity.save();
-  }
 
   let step = data.steps[event.params.stepIndex.toI32()];
 
@@ -46,7 +42,7 @@ export function handleStepCompleted(event: StepCompletedEvent): void {
     "-" +
     data.parentId.toHexString() +
     "-" +
-    event.params.stepIndex.toHexString();
+    event.params.stepIndex.toString();
 
   if (isPhysical) {
     stepId = stepId + "-physical";
@@ -60,7 +56,23 @@ export function handleStepCompleted(event: StepCompletedEvent): void {
   entitySteps.completedAt = step.completedAt;
   entitySteps.notes = step.notes;
   entitySteps.isCompleted = step.isCompleted;
+  entitySteps.stepIndex = data.currentStep;
   entitySteps.save();
+
+  if (entity) {
+    entity.currentStep = data.currentStep;
+    entity.lastUpdated = data.lastUpdated;
+
+    let steps = entity.fulfillmentOrderSteps;
+    if (!steps) {
+      steps = [];
+    }
+    if (steps.indexOf(entitySteps.id) == -1) {
+      steps.push(entitySteps.id);
+    }
+    entity.fulfillmentOrderSteps = steps;
+    entity.save();
+  }
 }
 
 export function handleFulfillmentCompleted(
@@ -94,6 +106,50 @@ export function handleFulfillmentCompleted(
 
 
 
+  let entity =  Fulfillment.load(
+    Bytes.fromUTF8(
+      event.address.toHexString() +
+        "-" +
+        event.params.orderId.toHexString() +
+        data.parentContract.toHexString() +
+        data.parentId.toHexString()
+    )
+  );
+
+  if (entity) {
+  let parent = Parent.load(
+   entity.parent
+  );
+
+
+  if (parent) {
+    for (let j = 0; j < parent.children.length; j++) {
+      let childEntity = Child.load(parent.children[j]);
+
+      if (childEntity && childEntity.futuresContracts) {
+        for (
+          let i = 0;
+          i < (childEntity.futuresContracts as Bytes[]).length;
+          i++
+        ) {
+          let futuresContract = FuturesContract.load(
+            (childEntity.futuresContracts as Bytes[])[i]
+          );
+
+          if (futuresContract) {
+            let marketOrderId = futuresContract.marketOrderId;
+
+            if (marketOrderId !== null) {
+              if ((marketOrderId as BigInt).equals(event.params.orderId)) {
+                futuresContract.isFulfilled = true;
+                futuresContract.save();
+              } 
+            }
+          } 
+        }
+      } 
+    }
+  }}
 }
 
 export function handleFulfillmentStarted(event: FulfillmentStartedEvent): void {
@@ -112,7 +168,9 @@ export function handleFulfillmentStarted(event: FulfillmentStartedEvent): void {
 
   entity.orderId = event.params.orderId;
   entity.parent = Bytes.fromUTF8(
-    data.parentContract.toHexString() + "-" + event.params.parentId.toHexString()
+    data.parentContract.toHexString() +
+      "-" +
+      event.params.parentId.toHexString()
   );
   let marketAddress = fulfillment.market();
 
@@ -129,3 +187,4 @@ export function handleFulfillmentStarted(event: FulfillmentStartedEvent): void {
 
   entity.save();
 }
+

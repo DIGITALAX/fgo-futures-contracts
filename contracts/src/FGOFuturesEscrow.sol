@@ -282,6 +282,17 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
         if (rights.amount < userBalance)
             revert FGOFuturesErrors.InsufficientEscrowedAmount();
 
+        uint256 escrowBalance = IERC1155(rights.childContract).balanceOf(
+            address(this),
+            rights.childId
+        );
+        if (escrowBalance < userBalance)
+            revert FGOFuturesErrors.FulfillmentNotComplete();
+
+        uint256 reserved = tradingContract.getReservedQuantity(msg.sender, fc.tokenId);
+        if (reserved > 0)
+            revert FGOFuturesErrors.TokensReservedInOrders();
+
         tradingContract.burn(msg.sender, fc.tokenId, userBalance);
 
         IERC1155(rights.childContract).safeTransferFrom(

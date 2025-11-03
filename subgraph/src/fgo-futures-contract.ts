@@ -67,17 +67,23 @@ export function handleFuturesContractOpened(
     entity.quantity = data.value.quantity;
 
     if (entity.childContract && entity.childId) {
-      let childEntity = Child.load(
-        Bytes.fromUTF8(
-          (entity.childContract as Bytes).toHexString() +
-            "-" +
-            (entity.childId as BigInt).toHexString()
-        )
+      let childId = Bytes.fromUTF8(
+        (entity.childContract as Bytes).toHexString() +
+          "-" +
+          (entity.childId as BigInt).toHexString()
       );
+      let childEntity = Child.load(childId);
 
       if (childEntity) {
         entity.child = childEntity.id;
-      }
+        let futuresContracts = childEntity.futuresContracts;
+        if (!futuresContracts) {
+          futuresContracts = [];
+        }
+        futuresContracts.push(entity.id);
+        childEntity.futuresContracts = futuresContracts;
+        childEntity.save();
+      } 
     }
 
     let entityEscrow = EscrowedRight.load(rightsKey);

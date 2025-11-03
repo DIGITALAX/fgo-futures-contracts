@@ -33,7 +33,9 @@ contract FGOFuturesErrors {
     error AlreadyRegistered();
     error InsufficientStake();
     error TokensAlreadyTraded();
+    error TokensReservedInOrders();
     error SettlementDatePassed();
     error InsufficientFuturesDuration();
     error InsufficientSettlementFunds();
+    error FulfillmentNotComplete();
 }
