@@ -11,6 +11,7 @@ import {
   Order,
 } from "../generated/schema";
 import { Metadata as MetadataTemplate } from "../generated/templates";
+import { FGOFuturesSettlement } from "../generated/FGOFuturesSettlement/FGOFuturesSettlement";
 
 export function handleFuturesContractOpened(
   event: FuturesContractOpenedEvent
@@ -47,7 +48,8 @@ export function handleFuturesContractOpened(
     entity.originalHolder = event.params.originalHolder;
     entity.tokenId = data.value.tokenId;
     entity.futuresSettlementDate = data.value.futuresSettlementDate;
-
+    let settlement = FGOFuturesSettlement.bind(futures.settlementContract());
+    entity.maxSettlementDelay = settlement.getMaxSettlementDelay();
     entity.createdAt = data.value.createdAt;
     entity.settledAt = data.value.settledAt;
     entity.settlementRewardBPS = data.value.settlementRewardBPS;
@@ -83,7 +85,7 @@ export function handleFuturesContractOpened(
         futuresContracts.push(entity.id);
         childEntity.futuresContracts = futuresContracts;
         childEntity.save();
-      } 
+      }
     }
 
     let entityEscrow = EscrowedRight.load(rightsKey);

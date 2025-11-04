@@ -694,6 +694,16 @@ contract FGOFuturesIntegrationTest is Test {
         trustedBots[1] = settlementBot2;
         trustedBots[2] = settlementBot3;
 
+        bytes32 rightsKey = keccak256(
+            abi.encodePacked(
+                CHILD_ID,
+                address(childContract),
+                ORDER_ID,
+                address(marketContract),
+                rightsHolder
+            )
+        );
+
         uint256 contractId = futuresContract.openFuturesContract(
             CHILD_ID,
             ORDER_ID,
@@ -707,26 +717,14 @@ contract FGOFuturesIntegrationTest is Test {
         );
 
         FGOFuturesLibrary.EscrowedRights memory rightsBefore = escrow
-            .getEscrowedRights(
-                CHILD_ID,
-                ORDER_ID,
-                address(childContract),
-                address(marketContract),
-                rightsHolder
-            );
+            .getEscrowedRights(rightsKey);
 
         assertEq(rightsBefore.amountUsedForFutures, FUTURES_AMOUNT);
 
         futuresContract.cancelFuturesContract(contractId);
 
         FGOFuturesLibrary.EscrowedRights memory rightsAfter = escrow
-            .getEscrowedRights(
-                CHILD_ID,
-                ORDER_ID,
-                address(childContract),
-                address(marketContract),
-                rightsHolder
-            );
+            .getEscrowedRights(rightsKey);
 
         assertEq(rightsAfter.amountUsedForFutures, 0);
 
@@ -1447,5 +1445,219 @@ contract FGOFuturesIntegrationTest is Test {
 
         assertTrue(settlement.isContractSettled(contractId), "Contract should be settled");
         assertTrue(futuresContract.getFuturesContract(contractId).isSettled, "Contract should be marked settled");
+    }
+
+    function test_ClaimUnusedRights() public {
+        // Scenario: Deposit 100 rights, create futures with only 50, then claim the unused 50
+        uint256 DEPOSIT_AMOUNT = 100;
+        uint256 FUTURES_AMOUNT_PARTIAL = 50;
+
+        vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            DEPOSIT_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
+        bytes32 rightsKey = escrow.depositPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            DEPOSIT_AMOUNT,
+            address(marketContract),
+            address(childContract)
+        );
+
+        vm.stopPrank();
+
+        // Register settlement bots
+        vm.startPrank(settlementBot1);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot2);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot3);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        // Open futures contract with only 50 of the 100 deposited rights
+        vm.startPrank(rightsHolder);
+        address[] memory trustedBots = new address[](3);
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
+
+        uint256 contractId = futuresContract.openFuturesContract(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURES_AMOUNT_PARTIAL,
+            PRICE_PER_UNIT,
+            Settlement_REWARD_BPS,
+            address(childContract),
+            address(marketContract),
+            trustedBots,
+            ""
+        );
+        vm.stopPrank();
+
+        FGOFuturesLibrary.FuturesContract memory fc = futuresContract
+            .getFuturesContract(contractId);
+
+        // Buy the futures
+        vm.startPrank(trader1);
+        uint256 totalCost = FUTURES_AMOUNT_PARTIAL * PRICE_PER_UNIT;
+        uint256 settlementFee = (totalCost * Settlement_REWARD_BPS) / 10000;
+        monaToken.approve(address(trading), totalCost + settlementFee);
+        trading.buyFromOrder(1, FUTURES_AMOUNT_PARTIAL);
+        vm.stopPrank();
+
+        // Complete fulfillment
+        fulfillmentContract.setFulfillmentStatus(ORDER_ID, 3, 3);
+
+        // Settle the futures
+        vm.warp(fc.futuresSettlementDate + 1);
+
+        vm.startPrank(rightsHolder);
+        monaToken.approve(
+            address(settlement),
+            (FUTURES_AMOUNT_PARTIAL * PRICE_PER_UNIT * Settlement_REWARD_BPS) / 10000
+        );
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot1);
+        settlement.settleFuturesContract(contractId);
+        vm.stopPrank();
+
+        // Check that 50 are marked as used
+        FGOFuturesLibrary.EscrowedRights memory rights = escrow.getEscrowedRights(rightsKey);
+        assertEq(rights.amount, 100, "Total deposited should be 100");
+        assertEq(rights.amountUsedForFutures, 50, "Amount used should be 50");
+
+        // Get initial balance of unused rights holder
+        uint256 initialBalance = childContract.balanceOf(rightsHolder, CHILD_ID);
+
+        // Claim the unused 50 rights
+        vm.startPrank(rightsHolder);
+        escrow.claimUnusedRights(rightsKey);
+        vm.stopPrank();
+
+        // Verify that rights holder received 50 rights
+        uint256 finalBalance = childContract.balanceOf(rightsHolder, CHILD_ID);
+        assertEq(finalBalance - initialBalance, 50, "Should receive 50 unused rights");
+
+        // Verify that the escrowed rights are updated
+        FGOFuturesLibrary.EscrowedRights memory rightsAfter = escrow.getEscrowedRights(rightsKey);
+        assertEq(rightsAfter.amount, 50, "Total deposited should now be 50");
+    }
+
+    function test_ClaimUnusedRightsFailsIfNotDepositor() public {
+        uint256 DEPOSIT_AMOUNT = 100;
+
+        vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            DEPOSIT_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
+        bytes32 rightsKey = escrow.depositPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            DEPOSIT_AMOUNT,
+            address(marketContract),
+            address(childContract)
+        );
+        vm.stopPrank();
+
+        // Try to claim with wrong caller
+        vm.startPrank(trader1);
+        vm.expectRevert();
+        escrow.claimUnusedRights(rightsKey);
+        vm.stopPrank();
+    }
+
+    function test_WithdrawAfterCancelledFutures() public {
+        uint256 DEPOSIT_AMOUNT = 100;
+        uint256 FUTURE_AMOUNT = 50;
+
+        vm.startPrank(settlementBot1);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot2);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(settlementBot3);
+        monaToken.approve(address(settlement), MIN_STAKE);
+        settlement.registerSettlementBot(MIN_STAKE);
+        vm.stopPrank();
+
+        vm.startPrank(rightsHolder);
+        childContract.transferPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            DEPOSIT_AMOUNT,
+            address(escrow),
+            address(marketContract)
+        );
+
+        bytes32 rightsKey = escrow.depositPhysicalRights(
+            CHILD_ID,
+            ORDER_ID,
+            DEPOSIT_AMOUNT,
+            address(marketContract),
+            address(childContract)
+        );
+        vm.stopPrank();
+
+        address[] memory trustedBots = new address[](3);
+        trustedBots[0] = settlementBot1;
+        trustedBots[1] = settlementBot2;
+        trustedBots[2] = settlementBot3;
+
+        vm.startPrank(rightsHolder);
+        uint256 contractId = futuresContract.openFuturesContract(
+            CHILD_ID,
+            ORDER_ID,
+            FUTURE_AMOUNT,
+            PRICE_PER_UNIT,
+            Settlement_REWARD_BPS,
+            address(childContract),
+            address(marketContract),
+            trustedBots,
+            "ipfs://test"
+        );
+        vm.stopPrank();
+
+        uint256 initialBalance = childContract.balanceOf(rightsHolder, CHILD_ID);
+
+        vm.startPrank(rightsHolder);
+        futuresContract.cancelFuturesContract(contractId);
+        vm.stopPrank();
+
+        FGOFuturesLibrary.EscrowedRights memory rightsAfterCancel = escrow.getEscrowedRights(rightsKey);
+        assertEq(rightsAfterCancel.amountUsedForFutures, 0, "Amount used for futures should be 0 after cancel");
+
+        uint256 availableAmount = escrow.getAvailableAmount(rightsKey);
+        assertEq(availableAmount, 100, "All 100 should be available after cancellation");
+
+        vm.startPrank(rightsHolder);
+        escrow.claimUnusedRights(rightsKey);
+        vm.stopPrank();
+
+        uint256 finalBalance = childContract.balanceOf(rightsHolder, CHILD_ID);
+        assertEq(finalBalance - initialBalance, 100, "Should receive all 100 rights after cancellation");
     }
 }

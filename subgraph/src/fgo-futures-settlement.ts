@@ -47,7 +47,6 @@ export function handleContractSettled(event: ContractSettledEvent): void {
     );
 
     let settlement = FGOFuturesSettlement.bind(event.address);
-    futureEntity.maxSettlementDelay = settlement.getMaxSettlementDelay();
     let fulfillerSettlement = futureEntity.fulfillerSettlement;
     if (fulfillerSettlement !== null) {
       futureEntity.timeSinceCompletion = event.block.timestamp.minus(

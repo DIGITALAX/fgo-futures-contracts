@@ -2,41 +2,75 @@ import {
   Address,
   BigInt,
   Bytes,
-  dataSource,
   store,
 } from "@graphprotocol/graph-ts";
 import {
-  ChildCreated as ChildCreatedEvent,
+  TemplateReserved as TemplateReservedEvent,
   ChildDeleted as ChildDeletedEvent,
   PhysicalRightsTransferred as PhysicalRightsTransferredEvent,
   ChildMinted as ChildMintedEvent,
-  FGOChild,
-} from "../generated/templates/FGOChild/FGOChild";
+  FGOTemplateChild,
+} from "../generated/templates/FGOTemplateChild/FGOTemplateChild";
 import { Child, PhysicalRights } from "../generated/schema";
 import { Metadata as MetadataTemplate } from "../generated/templates";
 import { FGOMarket } from "../generated/templates/FGOMarket/FGOMarket";
+import { FGOChild } from "../generated/templates/FGOChild/FGOChild";
 
-export function handleChildCreated(event: ChildCreatedEvent): void {
+export function handleTemplateReserved(event: TemplateReservedEvent): void {
   let entityId = Bytes.fromUTF8(
-    event.address.toHexString() + "-" + event.params.childId.toHexString()
+    event.address.toHexString() + "-" + event.params.templateId.toHexString()
   );
   let entity = new Child(entityId);
-  let child = FGOChild.bind(event.address);
+  let template = FGOTemplateChild.bind(event.address);
 
-  let childData = child.getChildMetadata(event.params.childId);
+  let childDataResult = template.try_getChildMetadata(event.params.templateId);
+
+  if (childDataResult.reverted) {
+    return;
+  }
+
+  let childData = childDataResult.value;
 
   entity.uri = childData.uri;
 
-  entity.isTemplate = false;
-
   entity.childContract = event.address;
-  entity.childId = event.params.childId;
+  entity.childId = event.params.templateId;
   entity.physicalPrice = childData.physicalPrice;
   let ipfsHash = (entity.uri as string).split("/").pop();
   if (ipfsHash != null) {
     entity.metadata = ipfsHash;
     MetadataTemplate.create(ipfsHash);
   }
+
+  entity.isTemplate = true;
+  let placements: Bytes[] = [];
+  let placementDataResult = template.try_getTemplatePlacements(
+    event.params.templateId
+  );
+
+  if (!placementDataResult.reverted) {
+    let placementData = placementDataResult.value;
+
+    for (let i = 0; i < placementData.length; i++) {
+      let placement = placementData[i];
+      let placementChildId = Bytes.fromUTF8(
+        placement.childContract.toHexString() +
+          "-" +
+          placement.childId.toHexString()
+      );
+
+      let placementChild = Child.load(placementChildId);
+
+      if (placementChild) {
+        placements.push(placementChild.id);
+        if (placementChild.isTemplate) {
+          placements = _getChildren(placements, placementChild);
+        }
+      }
+    }
+  }
+
+  entity.placements = placements;
 
   entity.save();
 }
@@ -148,4 +182,30 @@ export function handlePhysicalRightsTransferred(
   }
 
   receiverRights.save();
+}
+
+function _getChildren(placements: Bytes[], placementChild: Child): Bytes[] {
+  let template = FGOTemplateChild.bind(
+    Address.fromBytes(placementChild.childContract)
+  );
+  let placementData = template.getTemplatePlacements(placementChild.childId);
+
+  for (let i = 0; i < placementData.length; i++) {
+    let placement = placementData[i];
+    let placementChildId = Bytes.fromUTF8(
+      placement.childContract.toHexString() +
+        "-" +
+        placement.childId.toHexString()
+    );
+    let placementChild = Child.load(placementChildId);
+
+    if (placementChild) {
+      placements.push(placementChild.id);
+      if (placementChild.isTemplate) {
+        placements = _getChildren(placements, placementChild);
+      }
+    }
+  }
+
+  return placements;
 }

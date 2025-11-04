@@ -101,13 +101,7 @@ contract FGOFuturesContract is ReentrancyGuard {
             )
         );
         FGOFuturesLibrary.EscrowedRights memory rights = escrow
-            .getEscrowedRights(
-                childId,
-                orderId,
-                childContract,
-                originalMarket,
-                msg.sender
-            );
+            .getEscrowedRights(rightsKey);
 
         (uint256 tokenId, uint256 futuresSettlementDate) = _validateRights(
             rights,

@@ -22,6 +22,8 @@ dataSources:
           file: ./abis/FGOFuturesContract.json
         - name: FGOChild
           file: ./abis/FGOChild.json
+        - name: FGOFuturesSettlement
+          file: ./abis/FGOFuturesSettlement.json
       eventHandlers:
         - event: FuturesContractOpened(indexed
             uint256,uint256,uint256,uint256,uint256,address,address,address)
@@ -184,8 +186,6 @@ templates:
           handler: handleChildCreated
         - event: ChildDeleted(indexed uint256)
           handler: handleChildDeleted
-        - event: ChildMinted(indexed uint256,indexed uint256,indexed uint256,address,address,bool)
-          handler: handleChildMinted
         - event: PhysicalRightsTransferred(uint256,uint256,uint256,address,address,address)
           handler: handlePhysicalRightsTransferred
   - name: FGOSuppliers
@@ -393,7 +393,5 @@ templates:
           handler: handleTemplateReserved
         - event: ChildDeleted(indexed uint256)
           handler: handleChildDeleted
-        - event: ChildMinted(indexed uint256,indexed uint256,indexed uint256,address,address,bool)
-          handler: handleChildMinted
         - event: PhysicalRightsTransferred(uint256,uint256,uint256,address,address,address)
           handler: handlePhysicalRightsTransferred

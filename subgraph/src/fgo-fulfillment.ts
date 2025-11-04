@@ -1,4 +1,4 @@
-import { BigInt, ByteArray, Bytes, log } from "@graphprotocol/graph-ts";
+import { BigInt, ByteArray, Bytes, log, store } from "@graphprotocol/graph-ts";
 import {
   Child,
   Fulfillment,
@@ -7,6 +7,7 @@ import {
   FuturesContract,
   Order,
   Parent,
+  PhysicalRights,
 } from "../generated/schema";
 import {
   StepCompleted as StepCompletedEvent,
@@ -104,9 +105,7 @@ export function handleFulfillmentCompleted(
     entitySteps.save();
   }
 
-
-
-  let entity =  Fulfillment.load(
+  let entity = Fulfillment.load(
     Bytes.fromUTF8(
       event.address.toHexString() +
         "-" +
@@ -117,39 +116,67 @@ export function handleFulfillmentCompleted(
   );
 
   if (entity) {
-  let parent = Parent.load(
-   entity.parent
-  );
+    let parent = Parent.load(entity.parent);
 
+    if (parent) {
+      for (let j = 0; j < parent.children.length; j++) {
+        let childEntity = Child.load(parent.children[j]);
 
-  if (parent) {
-    for (let j = 0; j < parent.children.length; j++) {
-      let childEntity = Child.load(parent.children[j]);
+        if (childEntity && childEntity.futuresContracts) {
+          for (
+            let i = 0;
+            i < (childEntity.futuresContracts as Bytes[]).length;
+            i++
+          ) {
+            let futuresContract = FuturesContract.load(
+              (childEntity.futuresContracts as Bytes[])[i]
+            );
 
-      if (childEntity && childEntity.futuresContracts) {
-        for (
-          let i = 0;
-          i < (childEntity.futuresContracts as Bytes[]).length;
-          i++
-        ) {
-          let futuresContract = FuturesContract.load(
-            (childEntity.futuresContracts as Bytes[])[i]
+            if (futuresContract) {
+              let marketOrderId = futuresContract.marketOrderId;
+
+              if (marketOrderId !== null) {
+                if ((marketOrderId as BigInt).equals(event.params.orderId)) {
+                  futuresContract.isFulfilled = true;
+                  futuresContract.save();
+                }
+              }
+            }
+          }
+        }
+      }
+
+      let allChildren: Bytes[] = [];
+      for (let j = 0; j < parent.children.length; j++) {
+        let childEntity = Child.load(parent.children[j]);
+        if (childEntity) {
+          allChildren.push(childEntity.id);
+        }
+      }
+
+      for (let k = 0; k < allChildren.length; k++) {
+        let child = Child.load(allChildren[k]);
+        if (child) {
+          let rightsId = Bytes.fromUTF8(
+            child.childId.toHexString() +
+              "-" +
+              child.childContract.toHexString() +
+              "-" +
+              event.params.orderId.toHexString() +
+              "-" +
+              orderData.buyer.toHexString() +
+              "-" +
+              marketAddress.toHexString()
           );
 
-          if (futuresContract) {
-            let marketOrderId = futuresContract.marketOrderId;
-
-            if (marketOrderId !== null) {
-              if ((marketOrderId as BigInt).equals(event.params.orderId)) {
-                futuresContract.isFulfilled = true;
-                futuresContract.save();
-              } 
-            }
-          } 
+          let physicalRights = PhysicalRights.load(rightsId);
+          if (physicalRights) {
+            store.remove("PhysicalRights", physicalRights.id.toHexString());
+          }
         }
-      } 
+      }
     }
-  }}
+  }
 }
 
 export function handleFulfillmentStarted(event: FulfillmentStartedEvent): void {
@@ -187,4 +214,3 @@ export function handleFulfillmentStarted(event: FulfillmentStartedEvent): void {
 
   entity.save();
 }
-

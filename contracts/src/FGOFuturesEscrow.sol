@@ -19,8 +19,7 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
     string public name;
 
     mapping(bytes32 => FGOFuturesLibrary.EscrowedRights) private escrowedRights;
-    mapping(address => mapping(uint256 => mapping(uint256 => mapping(address => bool))))
-        private hasDepositedRights;
+    mapping(bytes32 => bool) private hasDepositedRights;
 
     event RightsDeposited(
         bytes32 indexed rightsKey,
@@ -125,7 +124,8 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
                 futuresCreated: false
             });
         } else {
-            uint256 totalWantToEscrow = escrowedRights[rightsKey].amount + amount;
+            uint256 totalWantToEscrow = escrowedRights[rightsKey].amount +
+                amount;
 
             uint256 escrowBalance = IERC1155(childContract).balanceOf(
                 address(this),
@@ -139,9 +139,7 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
             escrowedRights[rightsKey].amount += amount;
         }
 
-        hasDepositedRights[childContract][childId][orderId][
-            originalMarket
-        ] = true;
+        hasDepositedRights[rightsKey] = true;
 
         emit RightsDeposited(
             rightsKey,
@@ -155,21 +153,9 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
     }
 
     function withdrawPhysicalRights(
-        uint256 childId,
-        uint256 orderId,
         uint256 amount,
-        address childContract,
-        address originalMarket
+        bytes32 rightsKey
     ) external nonReentrant {
-        bytes32 rightsKey = keccak256(
-            abi.encodePacked(
-                childId,
-                childContract,
-                orderId,
-                originalMarket,
-                msg.sender
-            )
-        );
         FGOFuturesLibrary.EscrowedRights storage rights = escrowedRights[
             rightsKey
         ];
@@ -183,9 +169,7 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
 
         rights.amount -= amount;
         if (rights.amount == 0) {
-            hasDepositedRights[rights.childContract][rights.childId][
-                rights.orderId
-            ][rights.originalMarket] = false;
+            hasDepositedRights[rightsKey] = false;
         }
 
         IFGOChild(rights.childContract).transferPhysicalRights(
@@ -193,29 +177,37 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
             rights.orderId,
             amount,
             msg.sender,
-            originalMarket
+            rights.originalMarket
         );
 
         emit RightsWithdrawn(rightsKey, msg.sender, amount);
     }
 
-    function getEscrowedRights(
-        uint256 childId,
-        uint256 orderId,
-        address childContract,
-        address originalMarket,
-        address depositor
-    ) external view returns (FGOFuturesLibrary.EscrowedRights memory) {
-        bytes32 rightsKey = keccak256(
-            abi.encodePacked(
-                childId,
-                childContract,
-                orderId,
-                originalMarket,
-                depositor
-            )
+    function claimUnusedRights(bytes32 rightsKey) external nonReentrant {
+        FGOFuturesLibrary.EscrowedRights storage rights = escrowedRights[
+            rightsKey
+        ];
+
+        if (rights.depositor != msg.sender)
+            revert FGOFuturesErrors.NotDepositor();
+
+        uint256 claimable = rights.amount - rights.amountUsedForFutures;
+        if (claimable == 0) revert FGOFuturesErrors.InvalidAmount();
+
+        IERC1155(rights.childContract).safeTransferFrom(
+            address(this),
+            msg.sender,
+            rights.childId,
+            claimable,
+            ""
         );
-        return escrowedRights[rightsKey];
+
+        rights.amount -= claimable;
+        if (rights.amount == 0) {
+            hasDepositedRights[rightsKey] = false;
+        }
+
+        emit RightsWithdrawn(rightsKey, msg.sender, claimable);
     }
 
     function getEscrowedRights(
@@ -225,12 +217,9 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
     }
 
     function hasDepositedRightsForMarket(
-        address childContract,
-        uint256 childId,
-        uint256 orderId,
-        address market
+        bytes32 rightsKey
     ) external view returns (bool) {
-        return hasDepositedRights[childContract][childId][orderId][market];
+        return hasDepositedRights[rightsKey];
     }
 
     function markRightsAsUsed(
@@ -289,9 +278,11 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
         if (escrowBalance < userBalance)
             revert FGOFuturesErrors.FulfillmentNotComplete();
 
-        uint256 reserved = tradingContract.getReservedQuantity(msg.sender, fc.tokenId);
-        if (reserved > 0)
-            revert FGOFuturesErrors.TokensReservedInOrders();
+        uint256 reserved = tradingContract.getReservedQuantity(
+            msg.sender,
+            fc.tokenId
+        );
+        if (reserved > 0) revert FGOFuturesErrors.TokensReservedInOrders();
 
         tradingContract.burn(msg.sender, fc.tokenId, userBalance);
 
@@ -312,9 +303,7 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
             rights.futuresCreated = false;
         }
         if (rights.amount == 0) {
-            hasDepositedRights[rights.childContract][rights.childId][
-                rights.orderId
-            ][rights.originalMarket] = false;
+            hasDepositedRights[rightsKey] = false;
         }
 
         emit ChildClaimedAfterSettlement(
@@ -326,20 +315,8 @@ contract FGOFuturesEscrow is ERC1155Holder, ReentrancyGuard {
     }
 
     function getAvailableAmount(
-        uint256 childId,
-        uint256 orderId,
-        address childContract,
-        address originalMarket
+        bytes32 rightsKey
     ) external view returns (uint256) {
-        bytes32 rightsKey = keccak256(
-            abi.encodePacked(
-                childId,
-                childContract,
-                orderId,
-                originalMarket,
-                msg.sender
-            )
-        );
         FGOFuturesLibrary.EscrowedRights memory rights = escrowedRights[
             rightsKey
         ];
