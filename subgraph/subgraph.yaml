@@ -6,9 +6,9 @@ schema:
 dataSources:
   - kind: ethereum
     name: FGOFuturesContract
-    network: lens-testnet
+    network: lens
     source:
-      address: "0x118558e1351FE59D2ebF6C3421045eBE9fD71ed8"
+      address: "0x2102cA17F2d480A136dd72dd5577f2c45fd86aC3"
       abi: FGOFuturesContract
       startBlock: 4185136
     mapping:
@@ -33,9 +33,9 @@ dataSources:
       file: ./src/fgo-futures-contract.ts
   - kind: ethereum
     name: FGOFuturesEscrow
-    network: lens-testnet
+    network: lens
     source:
-      address: "0xee8B5b5b582Dc5D31651b10579236dB74f5B6168"
+      address: "0x6fc3107D7757c2F7A964cD4C00B3440A6E744c6D"
       abi: FGOFuturesEscrow
       startBlock: 4185136
     mapping:
@@ -63,9 +63,9 @@ dataSources:
       file: ./src/fgo-futures-escrow.ts
   - kind: ethereum
     name: FGOFuturesSettlement
-    network: lens-testnet
+    network: lens
     source:
-      address: "0x7099069Dc36e49E1C158f7ce9a6A0eab62A695c4"
+      address: "0x97Cde87d7deCd3d229D1Dbab4DF91cFE97e4cC4E"
       abi: FGOFuturesSettlement
       startBlock: 4185136
     mapping:
@@ -98,9 +98,9 @@ dataSources:
       file: ./src/fgo-futures-settlement.ts
   - kind: ethereum
     name: FGOFactory
-    network: lens-testnet
+    network: lens
     source:
-      address: "0xf0434751a063F57D98CABe88620515DAB0895CeA"
+      address: "0x8037e90CE435714459CdEfA7F728aC56f30Ef221"
       abi: FGOFactory
       startBlock: 4185136
     mapping:
@@ -132,9 +132,9 @@ dataSources:
       file: ./src/fgo-factory.ts
   - kind: ethereum
     name: FGOFuturesTrading
-    network: lens-testnet
+    network: lens
     source:
-      address: "0x0C8A98Bd8152F855d918e9606b354a0caC61F1aF"
+      address: "0x8037e90CE435714459CdEfA7F728aC56f30Ef221"
       abi: FGOFuturesTrading
       startBlock: 4185136
     mapping:
@@ -164,7 +164,7 @@ dataSources:
 templates:
   - name: FGOChild
     kind: ethereum/contract
-    network: lens-testnet
+    network: lens
     source:
       abi: FGOChild
     mapping:
@@ -188,9 +188,11 @@ templates:
           handler: handleChildDeleted
         - event: PhysicalRightsTransferred(uint256,uint256,uint256,address,address,address)
           handler: handlePhysicalRightsTransferred
+        - event: ChildMinted(indexed uint256,indexed uint256,indexed uint256,address,address,bool)
+          handler: handleChildMinted
   - name: FGOSuppliers
     kind: ethereum/contract
-    network: lens-testnet
+    network: lens
     source:
       abi: FGOSuppliers
     mapping:
@@ -252,7 +254,7 @@ templates:
           file: ./abis/FGOFactory.json
   - name: FGOMarket
     kind: ethereum/contract
-    network: lens-testnet
+    network: lens
     source:
       abi: FGOMarket
     mapping:
@@ -276,7 +278,7 @@ templates:
           handler: handleOrderExecuted
   - name: FGOFulfillment
     kind: ethereum/contract
-    network: lens-testnet
+    network: lens
     source:
       abi: FGOFulfillment
     mapping:
@@ -298,11 +300,11 @@ templates:
           handler: handleFulfillmentCompleted
         - event: OrderStatusUpdated(indexed uint256,uint8)
           handler: handleOrderStatusUpdated
-        - event: StepCompleted(indexed uint256,indexed uint256,indexed address,string)
+        - event: StepCompleted(indexed uint256,indexed uint256,indexed uint256,string)
           handler: handleStepCompleted
   - name: FGOFulfillers
     kind: ethereum/contract
-    network: lens-testnet
+    network: lens
     source:
       abi: FGOFulfillers
     mapping:
@@ -326,7 +328,7 @@ templates:
           handler: handleFulfillerWalletTransferred
   - name: FGOAccessControl
     kind: ethereum/contract
-    network: lens-testnet
+    network: lens
     source:
       abi: FGOAccessControl
     mapping:
@@ -344,7 +346,7 @@ templates:
           handler: handleFulfillerAdded
   - name: FGOParent
     kind: ethereum/contract
-    network: lens-testnet
+    network: lens
     source:
       abi: FGOParent
     mapping:
@@ -362,6 +364,8 @@ templates:
           file: ./abis/FGOParent.json
         - name: FGOAccessControl
           file: ./abis/FGOAccessControl.json
+        - name: FGOFulfillers
+          file: ./abis/FGOFulfillers.json
       eventHandlers:
         - event: ParentUpdated(indexed uint256)
           handler: handleParentUpdated
@@ -369,7 +373,7 @@ templates:
           handler: handleParentCreated
   - name: FGOTemplateChild
     kind: ethereum/contract
-    network: lens-testnet
+    network: lens
     source:
       abi: FGOTemplateChild
     mapping:
@@ -395,3 +399,5 @@ templates:
           handler: handleChildDeleted
         - event: PhysicalRightsTransferred(uint256,uint256,uint256,address,address,address)
           handler: handlePhysicalRightsTransferred
+        - event: ChildMinted(indexed uint256,indexed uint256,indexed uint256,address,address,bool)
+          handler: handleChildMinted

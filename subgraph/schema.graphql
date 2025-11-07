@@ -203,7 +203,6 @@ type FulfillmentStep @entity {
   workflow: FulfillmentWorkflow
   fulfiller: Fulfiller
   instructions: String
-  primaryPerformer: Bytes!
   subPerformers: [SubPerformer!]
 }
 

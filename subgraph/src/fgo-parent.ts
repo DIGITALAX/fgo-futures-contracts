@@ -13,6 +13,7 @@ import {
 } from "../generated/schema";
 import { Metadata as MetadataTemplate } from "../generated/templates";
 import { FGOAccessControl } from "../generated/templates/FGOAccessControl/FGOAccessControl";
+import { FGOFulfillers } from "../generated/templates/FGOFulfillers/FGOFulfillers";
 
 export function handleParentUpdated(event: ParentUpdatedEvent): void {
   let entity = Parent.load(
@@ -56,7 +57,7 @@ export function handleParentCreated(event: ParentCreatedEvent): void {
     let childId = Bytes.fromUTF8(
       data.childReferences[i].childContract.toHexString() +
         "-" +
-        data.childReferences[i].childId.toHexString()
+        data.childReferences[i].childId.toString()
     );
     let child = Child.load(childId);
     if (child) {
@@ -106,13 +107,20 @@ export function handleParentCreated(event: ParentCreatedEvent): void {
     );
 
     step.workflow = fulfillmentWorkflow.id;
-    step.primaryPerformer = data.workflow.physicalSteps[i].primaryPerformer;
     step.instructions = data.workflow.physicalSteps[i].instructions;
-    step.fulfiller = Bytes.fromUTF8(
+
+    data.workflow.physicalSteps[i].primaryPerformer;
+
+    let fulfillers = FGOFulfillers.bind(
+      parent.fulfillers()
+    ).getFulfillerProfile(data.workflow.physicalSteps[i].primaryPerformer);
+    let fulfillerId2 = Bytes.fromUTF8(
       accessControlContract.infraId().toHexString() +
         "-" +
-        data.workflow.physicalSteps[i].primaryPerformer.toHexString()
+        fulfillers.fulfillerAddress.toHexString()
     );
+
+    step.fulfiller = fulfillerId2;
 
     let subPerformers: Bytes[] = [];
     for (

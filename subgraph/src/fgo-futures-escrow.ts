@@ -59,13 +59,7 @@ export function handleChildClaimedAfterSettlement(
 export function handleRightsDeposited(event: RightsDepositedEvent): void {
   let entity = EscrowedRight.load(event.params.rightsKey);
   let escrow = FGOFuturesEscrow.bind(event.address);
-  let data = escrow.getEscrowedRights(
-    event.params.childId,
-    event.params.orderId,
-    event.params.childContract,
-    event.params.originalMarket,
-    event.params.depositor
-  );
+  let data = escrow.getEscrowedRights(event.params.rightsKey);
   if (!entity) {
     entity = new EscrowedRight(event.params.rightsKey);
     entity.childId = event.params.childId;
@@ -88,7 +82,7 @@ export function handleRightsDeposited(event: RightsDepositedEvent): void {
   let entityId = Bytes.fromUTF8(
     event.params.childContract.toHexString() +
       "-" +
-      event.params.childId.toHexString()
+      event.params.childId.toString()
   );
   entity.child = entityId;
 
@@ -135,8 +129,9 @@ export function handleRightsDeposited(event: RightsDepositedEvent): void {
       if (rights.guaranteedAmount.equals(event.params.amount)) {
         store.remove("PhysicalRights", receiverRights.id.toHexString());
       } else {
-   
-      receiverRights.guaranteedAmount =  receiverRights.guaranteedAmount.minus(event.params.amount);
+        receiverRights.guaranteedAmount = receiverRights.guaranteedAmount.minus(
+          event.params.amount
+        );
         receiverRights.save();
       }
     }
